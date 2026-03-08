@@ -1,0 +1,64 @@
+{
+  "name": "registrolab",
+  "author": "Irving Poot",
+  "description": "Sistema de Gestión Lab-Somno",
+  "type": "module",
+  "version": "0.0.1",
+  "main": "electron-main.cjs",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "electron:dev": "concurrently -k \"cross-env NODE_ENV=development astro dev\" \"wait-on http://localhost:4321 && cross-env NODE_ENV=development electron electron-main.cjs\"",
+    "electron:build": "astro build && electron electron-main.cjs",
+    "dist": "pnpm run build && electron-builder"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.84.0",
+    "@tailwindcss/vite": "^4.1.13",
+    "astro": "^5.13.7",
+    "tailwindcss": "^4.1.13"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@clerk/shared",
+      "@tailwindcss/oxide",
+      "esbuild",
+      "sharp"
+    ]
+  },
+  "devDependencies": {
+    "@astrojs/node": "^9.4.3",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^40.8.0",
+    "electron-builder": "^26.8.1",
+    "wait-on": "^9.0.4"
+  },
+  "build": {
+    "appId": "com.labsomno.app",
+    "productName": "Lab Somno Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron-main.cjs",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/logo.png" 
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Lab Somno"
+    },
+    "asarUnpack": [
+      "dist/**/*" 
+    ]
+  }
+}

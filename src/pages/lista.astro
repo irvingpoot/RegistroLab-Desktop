@@ -1,0 +1,265 @@
+---
+
+/**
+ * @file lista.astro
+ * @description Directorio principal y listado de expedientes de pacientes.
+ * * OPTIMIZACIÓN DE RENDIMIENTO:
+ * - Implementa Paginación Server-Side (Offset/Limit) para manejar grandes volúmenes de datos
+ * sin saturar el cliente ni el ancho de banda (`PAGE_SIZE = 50`).
+ * - Consulta Relacional Optimizada: Recupera la lista de pacientes y *solamente* la última nota
+ * de seguimiento (subconsulta `.limit(1)`) para mostrar el estado más reciente sin descargar todo el historial.
+ * * FUNCIONALIDAD:
+ * - Búsqueda en tiempo real (por nombre) usando filtros `ilike` de Postgres.
+ * - Navegación entre páginas (Anterior/Siguiente) manteniendo el estado de la búsqueda actual.
+ */
+
+import Layout from "../layouts/Layout.astro"
+import ReturnButton from "../components/ReturnButton.astro"
+import { createClient } from "@supabase/supabase-js"
+import PatientTypeModal from "../components/PatientTypeModal.astro"
+
+const supabase = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.SUPABASE_KEY
+);
+
+// 1. RECUPERAR PARÁMETROS (Búsqueda y Paginación)
+const busqueda = Astro.url.searchParams.get('q') || '';
+const page = parseInt(Astro.url.searchParams.get('page') || '1');
+const PAGE_SIZE = 50;
+const from = (page - 1) * PAGE_SIZE;
+const to = from + PAGE_SIZE - 1;
+
+// 2. CONSTRUIR CONSULTA
+// Iniciamos la consulta base con el conteo exacto
+let queryBuilder = supabase
+    .from('pacientes')
+    .select(`
+        id,
+        nombre,
+        tipo_paciente,
+        edad,
+        referencia,
+        registrado_por,
+        created_at,
+        pacientes_seguimiento ( registrado_por, fecha )
+    `, { count: 'exact' })
+    .order('created_at', { ascending: false });
+
+// Si hay búsqueda, filtramos ANTES de paginar
+if (busqueda) {
+    queryBuilder = queryBuilder.ilike('nombre', `%${busqueda}%`);
+}
+
+// Finalmente aplicamos el rango (paginación) y ejecutamos
+const { data: pacientesRaw, count, error } = await queryBuilder.range(from, to);
+
+if (error) console.error("Error cargando pacientes:", error);
+
+// 3. PROCESAR DATOS (Último seguimiento)
+const pacientes = pacientesRaw?.map((p: any) => {
+    let ultimoAutor = null;
+    let fechaUltimo = null;
+
+    if (p.pacientes_seguimiento && p.pacientes_seguimiento.length > 0) {
+        const ultimo = p.pacientes_seguimiento.sort((a: any, b: any) => 
+            new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
+        )[0];
+        ultimoAutor = ultimo.registrado_por;
+        fechaUltimo = ultimo.fecha;
+    }
+
+    return { ...p, ultimo_seguimiento_por: ultimoAutor, fecha_ultimo_seguimiento: fechaUltimo };
+}) || [];
+
+// Helpers
+const formatDate = (dateString: string) => {
+    if (!dateString) return "—";
+    return new Date(dateString).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+// 4. CALCULOS DE PAGINACIÓN UI
+const totalPages = Math.ceil((count || 0) / PAGE_SIZE);
+const hasPrev = page > 1;
+const hasNext = page < totalPages;
+const startItem = (count === 0) ? 0 : from + 1;
+const endItem = Math.min(to + 1, count || 0);
+
+// Helper para mantener la búsqueda en los links de paginación
+const getPageLink = (pageNum: number) => {
+    const params = new URLSearchParams();
+    if (busqueda) params.set('q', busqueda);
+    params.set('page', pageNum.toString());
+    return `?${params.toString()}`;
+};
+---
+
+<Layout title="Pacientes | Lab-Somno">
+	<ReturnButton href="/dashboard" text="Volver al dashboard" />
+    <main class="max-w-7xl mx-auto pt-10 pb-28 px-4">
+		<div class="flex flex-col items-center justify-center mb-10">
+            <h1 class="max-md:max-w-xs max-md:pt-10 max-lg:max-w-xl text-4xl md:text-6xl font-extrabold text-balance text-center">Laboratorio del <span class="bg-gradient-to-r from-blue-500 via-blue-300 to-blue-600 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]">sueño</span></h1>
+		</div>
+
+		<h2 class="text-2xl font-medium text-center text-gray-200 mb-2">Lista de pacientes</h2>
+        
+        <div class="flex flex-col-reverse md:flex-row justify-between items-center gap-4 mb-8 mx-1">
+    
+			<form method="GET" class="w-full md:max-w-md relative group">
+				<div class="absolute inset-y-0 start-0 flex items-center ps-3 pointer-events-none">
+					<svg class="w-4 h-4 text-gray-400 group-focus-within:text-blue-400 transition-colors" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+						<path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/>
+					</svg>
+				</div>
+
+				<input 
+					type="text" 
+					name="q" 
+					value={busqueda}
+					class="block w-full p-3 ps-10 pr-36 text-sm text-white border border-gray-700 rounded-lg bg-gray-900/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-500 transition-all shadow-lg" 
+					placeholder="Buscar paciente..." 
+					autocomplete="off"
+				/>
+
+				<div class="absolute inset-y-0 right-2 flex items-center gap-1">
+					
+					{busqueda && (
+						<a href="/lista" class="text-gray-400 hover:text-white hover:bg-white/10 p-1.5 rounded-md transition-colors flex items-center" title="Limpiar búsqueda">
+							<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+							</svg>
+						</a>
+					)}
+
+					<button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-md text-xs px-3 py-1.5 transition-colors cursor-pointer ml-1">
+						Buscar
+					</button>
+				</div>
+			</form>
+
+			<button onclick="document.getElementById('modal-tipo-paciente').showModal()" class="w-full md:w-auto group relative overflow-hidden rounded-lg border border-blue-500/30 bg-transparent px-6 py-2.5 text-blue-300 shadow-sm transition-all hover:text-white hover:shadow-[0_0_20px_rgba(59,130,246,0.4)] hover:border-blue-600 flex items-center justify-center md:justify-start cursor-pointer">
+				<span class="absolute inset-0 w-0 bg-blue-600/80 transition-all duration-[250ms] ease-out group-hover:w-full"></span>
+				<span class="relative flex items-center gap-2 text-sm font-semibold tracking-wide uppercase">
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+					</svg>
+					Nuevo paciente
+				</span>
+			</button>
+
+		</div>
+
+		<div class="w-full overflow-hidden rounded-xl border border-gray-800 bg-gray-900/20 backdrop-blur shadow-lg overflow-x-auto">
+			
+            <table class="w-full text-left border-collapse min-w-[900px]">
+				<thead class="bg-gradient-to-r from-transparent via-blue-950/30 to-transparent">
+					<tr>
+						<th class="px-8 py-4 text-gray-400 font-semibold text-sm uppercase tracking-wider">Nombre</th>
+						
+						<th class="px-6 py-4 text-gray-400 font-semibold text-sm uppercase tracking-wider">Tipo</th>
+						
+						<th class="px-6 py-4 text-gray-400 font-semibold text-sm uppercase tracking-wider">Edad</th>
+						<th class="px-6 py-4 text-gray-400 font-semibold text-sm uppercase tracking-wider">Referencia</th>
+						<th class="px-6 py-4 text-gray-400 font-semibold text-sm uppercase tracking-wider">Registró</th>
+						<th class="px-6 py-4 text-center">Último Seguimiento</th>
+						<th class="px-6 py-4 text-gray-400 font-semibold text-sm uppercase tracking-wider text-right">Fecha</th>
+					</tr>
+				</thead>
+				<tbody>
+					{pacientes?.map((paciente) => (
+						<tr 
+							class="group cursor-pointer hover:bg-white/[0.02] transition-colors relative"
+							onclick={`window.location.href = '${paciente.tipo_paciente === 'animo' ? '/paciente/animo/' + paciente.id : '/paciente/sueno/' + paciente.id}'`}
+						>
+							<td class="px-8 py-5 align-middle">
+								<div class="flex items-center gap-3">
+									<div class={`w-2 h-2 rounded-full transition-all ${paciente.tipo_paciente === 'animo' ? 'bg-purple-500 group-hover:shadow-[0_0_8px_rgba(168,85,247,0.8)]' : 'bg-blue-500 group-hover:shadow-[0_0_8px_rgba(59,130,246,0.8)]'}`}></div>
+									<span class="text-gray-200 font-medium text-lg capitalize group-hover:text-white transition-colors">
+										{paciente.nombre}
+									</span>
+								</div>
+								<div class="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gray-700/50 to-transparent group-hover:via-blue-500/50 transition-all"></div>
+							</td>
+
+							<td class="px-6 py-5 align-middle">
+								{paciente.tipo_paciente === 'animo' ? (
+									<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+										ÁNIMO
+									</span>
+								) : (
+									<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+										SUEÑO
+									</span>
+								)}
+							</td>
+
+							<td class="px-6 py-5 text-gray-400 align-middle">{paciente.edad} años</td>
+							<td class="px-6 py-5 text-gray-400 align-middle">{paciente.referencia}</td>
+							<td class="px-6 py-5 text-gray-400 align-middle">
+								{paciente.registrado_por || "—"}
+							</td>
+							<td class="px-6 py-4 text-center">
+								{paciente.ultimo_seguimiento_por ? (
+									<div class="flex flex-col items-center">
+										<span class={`text-white font-medium text-xs px-2 py-0.5 rounded border ${paciente.tipo_paciente === 'animo' ? 'bg-purple-600/30 border-purple-500/20' : 'bg-blue-600/30 border-blue-500/20'}`}>
+											{paciente.ultimo_seguimiento_por}
+										</span>
+										<span class="text-[10px] text-white mt-1">
+											{new Date(paciente.fecha_ultimo_seguimiento).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+										</span>
+									</div>
+								) : (
+									<span class="text-gray-600 text-xs">—</span>
+								)}
+							</td>
+							<td class="px-6 py-5 text-gray-500 font-mono text-sm align-middle text-right">
+								{new Date(paciente.created_at).toLocaleDateString('es-MX', {
+									year: '2-digit', month: 'short', day: 'numeric'
+								})}
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+
+		<div class="flex flex-col md:flex-row justify-between items-center mt-6 gap-4">
+            <div class="text-sm text-gray-400">
+                Mostrando desde <span class="font-bold text-white">{startItem}</span> a <span class="font-bold text-white">{endItem}</span> de <span class="font-bold text-blue-400">{count}</span> resultados
+            </div>
+
+            <div class="flex gap-2">
+                <a 
+                    href={hasPrev ? getPageLink(page - 1) : '#'} 
+                    class={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-700 ${
+                        hasPrev 
+                        ? 'bg-gray-800 text-white hover:bg-gray-700 hover:border-gray-600' 
+                        : 'bg-gray-900/50 text-gray-600 cursor-not-allowed pointer-events-none'
+                    }`}
+                >
+                    ← Anterior
+                </a>
+
+                <div class="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-gray-300 font-mono">
+                    Pág {page} / {totalPages || 1}
+                </div>
+
+                <a 
+                    href={hasNext ? getPageLink(page + 1) : '#'} 
+                    class={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-700 ${
+                        hasNext 
+                        ? 'bg-gray-800 text-white hover:bg-gray-700 hover:border-gray-600' 
+                        : 'bg-gray-900/50 text-gray-600 cursor-not-allowed pointer-events-none'
+                    }`}
+                >
+                    Siguiente →
+                </a>
+            </div>
+        </div>
+		
+	</main>
+
+	<PatientTypeModal />
+</Layout>

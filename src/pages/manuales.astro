@@ -1,0 +1,66 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ReturnButton from '../components/ReturnButton.astro';
+import ManualCard from '../components/ManualCard.astro';
+
+interface Manual {
+    titulo: string;
+    descripcion: string;
+    url: string;
+    tipo: "CANVA" | "WORD" | "DRIVE" | "VIDEO" | "EXCEL" | "WEB"; 
+}
+
+const listaManuales: Manual[] = [
+    {
+        titulo: "Guía para el EMBLA",
+        descripcion: "Guía completa para la configuración de umbrales y localización de DLPFC.",
+        url: "https://www.canva.com/design/DAG-a-GlLOs/CWIavcmMT0sEufxBZvz8hw/edit?utm_content=DAG-a-GlLOs&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton",
+        tipo: "CANVA"
+    },
+    {
+        titulo: "Guía para el sistema 10-20",
+        descripcion: "Metodología para la colocación de electrodos para Neurofeedback usando el sistema 10-20.",
+        url: "https://docs.google.com/document/d/16QqSggc-eSZAY76BrwVd5MCHTj1woDJGqkRIT9jIxJM/edit?usp=sharing",
+        tipo: "WORD"
+    }
+];
+---
+
+<Layout title="Manuales | Lab-Somno">
+	<ReturnButton href="/dashboard" text="Volver al dashboard" />
+    <div class="min-h-screen p-4 md:p-10">
+        
+        <div class="max-w-7xl mx-auto mb-12 text-center">
+            <h1 class="max-md:max-w-xs max-md:pt-10 max-lg:max-w-xl text-4xl md:text-6xl font-extrabold text-balance text-center">Biblioteca del <span class="bg-gradient-to-r from-blue-500 via-blue-300 to-blue-600 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]">sueño</span></h1>
+            <p class=" pt-5 text-lg text-gray-400">
+                Todos los recursos, guías y documentos necesarios están aquí.
+            </p>
+        </div>
+
+        <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        
+            {listaManuales.map((manual, index) => (
+                <ManualCard 
+                    titulo={manual.titulo}
+                    descripcion={manual.descripcion}
+                    url={manual.url}
+                    tipo={manual.tipo}
+                    delay={index * 100}
+                />
+            ))}
+        </div>
+    </div>
+</Layout>
+
+<style>
+    @keyframes enter-up { 
+        from { 
+            opacity: 0; transform: translateY(20px);
+        } to { 
+            opacity: 1; transform: translateY(0); 
+        } 
+    }
+    .animate-enter-up { 
+        animation: enter-up 0.6s ease-out forwards;
+    }
+</style>

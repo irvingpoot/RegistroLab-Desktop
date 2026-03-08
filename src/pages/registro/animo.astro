@@ -1,0 +1,1064 @@
+---
+/**
+ * @file registro/animo.astro
+ * @description Formulario para admisión de pacientes de Estado de Ánimo (Depresión, Ansiedad, etc.)
+ * Basado en la lógica robusta de sueno.astro pero adaptado al contexto psiquiátrico.
+ */
+
+import Layout from "../../layouts/Layout.astro"
+import ReturnButton from "../../components/ReturnButton.astro"
+import SintomaGroup from "../../components/SintomaGroup.astro"
+import { createClient } from "@supabase/supabase-js"
+import { getLocalUser } from "../../utils/localUser";
+
+const supabase = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.SUPABASE_KEY
+);
+
+const user = getLocalUser(Astro.cookies);
+
+if (!user) {
+    return Astro.redirect('/');
+}
+
+const nombreRegistrador = user 
+    ? `${user.firstName} ${user.lastName}`.trim() || "Usuario desconocido"
+    : "Anónimo";
+
+let mensaje = "";
+let error = false;
+const registroExitoso = Astro.url.searchParams.get('exito') === 'true';
+
+const trastornosOptions = [
+    {
+        categoria: "Ansiedad, TOC y Trauma",
+        opciones: [
+            "Ansiedad generalizada",
+            "Ansiedad inducida por sustancia o medicamento",
+            "Ansiedad debida a afección médica",
+            "Ansiedad por enfermedad",
+            "TOC",
+            "Dismórfico corporal",
+            "TEPT"
+        ]
+    },
+    {
+        categoria: "Espectro Esquizofrénico y Psicótico",
+        opciones: [
+            "Esquizofreniforme",
+            "Esquizoafectivo",
+            "Esquizofrenia (Paranoide, catatónica, desorganizada, indiferenciada, simple)",
+            "Psicótico breve",
+            "Delirante (Erotomaníaco, celotípico, grandeza, mixto, persecutorio, somático, no especificado)",
+        ]
+    },
+    {
+        categoria: "Bipolar y Depresivos",
+        opciones: [
+            "Bipolar I (Predominan episodios maníacos)",
+            "Bipolar II (Predominan episodios depresivos)",
+            "Ciclotímico: Cíclico, tiempo especifico",
+            "Depresión mayor",
+            "Distimia",
+            "Disfórico premenstrual"
+        ]
+    },
+    {
+        categoria: "Conducta Alimentaria y Sustancias",
+        opciones: [
+            "Anorexia",
+            "Bulimia",
+            "Atracones",
+            "Consumo de sustancias"
+        ]
+    }
+];
+
+if (Astro.request.method === "POST") {
+    try {
+        const data = await Astro.request.formData();
+
+        // Helper para números
+        const getInt = (key: string) => {
+            const val = data.get(key);
+            return val ? parseInt(val as string) : null;
+        };
+
+        // 1. CALCULAR EDAD AUTOMÁTICAMENTE
+        let edadCalculada = 0;
+        const fechaNacString = data.get("fecha_nacimiento") as string;
+        
+        if (fechaNacString) {
+            const hoy = new Date();
+            const cumple = new Date(fechaNacString);
+            let edad = hoy.getFullYear() - cumple.getFullYear();
+            const m = hoy.getMonth() - cumple.getMonth();
+            if (m < 0 || (m === 0 && hoy.getDate() < cumple.getDate())) {
+                edad--;
+            }
+            edadCalculada = edad;
+        }
+
+        const nuevoPaciente = {
+            // CLAVE: Define el tipo de paciente
+            tipo_paciente: "animo", 
+
+            // 1. SocioDemográficos
+            nombre: data.get("nombre"),
+            telefono: data.get("telefono"),
+            edad: edadCalculada,
+            fecha_nacimiento: fechaNacString ? fechaNacString : null,
+            genero: data.get("genero"),
+            ocupacion: data.get("ocupacion"),
+            escolaridad: data.get("escolaridad"),
+            referencia: data.get("referencia"),
+            
+            // 2. Clínicos Generales
+            motivo: data.get("motivo"),
+            sintoma: data.get("motivo") || "Consulta Estado de Ánimo",
+            antecedentes: data.get("antecedentes"), // Historia clínica / familiar
+            
+            // 3. Referido
+            referido_por_nombre: data.get('referido_por_nombre'),
+            referido_por_telefono: data.get('referido_por_telefono'),
+            referido_por_correo: data.get('referido_por_correo'),
+
+            acompanante_nombre: data.get('acompanante_nombre'),
+            acompanante_parentesco: data.get('acompanante_parentesco'),
+            acompanante_telefono: data.get('acompanante_telefono'),
+
+            trastornos_animo: data.getAll('trastornos_animo'),
+
+            farmacos_nombres: data.getAll('farmacos_nombres').filter(x => x.toString().trim() !== ''),
+            farmacos_tiempos: data.getAll('farmacos_tiempos').filter((_, index) => {
+                const nombres = data.getAll('farmacos_nombres');
+                return nombres[index] && nombres[index].toString().trim() !== '';
+            }),
+            farmacos_motivos: data.getAll('farmacos_motivos').filter((_, index) => {
+                const nombres = data.getAll('farmacos_nombres');
+                return nombres[index] && nombres[index].toString().trim() !== '';
+            }),
+            farmacos_frecuencias: data.getAll('farmacos_frecuencias').filter((_, index) => {
+                const nombres = data.getAll('farmacos_nombres');
+                return nombres[index] && nombres[index].toString().trim() !== '';
+            }),
+            farmacos_dosis: data.getAll('farmacos_dosis').filter((_, index) => {
+                const nombres = data.getAll('farmacos_nombres');
+                return nombres[index] && nombres[index].toString().trim() !== '';
+            }),
+
+            // 4. Hábitos (Relevantes para el ánimo)
+            ejercicio: data.get("ejercicio"),
+            horas_ejercicio: data.get("horas_ejercicio"),
+
+            ideacion_suicida: data.get("ideacion_suicida"),
+            ideacion_suicida_desc: data.get("ideacion_suicida_desc"),
+            
+            planeacion_suicida: data.get("planeacion_suicida"),
+            planeacion_suicida_desc: data.get("planeacion_suicida_desc"),
+            
+            intento_suicida: data.get("intento_suicida"),
+            intento_suicida_desc: data.get("intento_suicida_desc"),
+
+            // 5. Sustancias (Muy relevantes en psiquiatría)
+            fuma: data.get("fuma"),
+            cigarros_semana: getInt("cigarros_semana"),
+            alcohol: data.get("alcohol"),
+            cervezas_semana: getInt("cervezas_semana"),
+            cafe: data.get("cafe"),
+            tazas_cafe_semana: getInt("tazas_cafe_semana"),
+            te: data.get("te"),
+            tazas_te_semana: getInt("tazas_te_semana"),
+
+            // 6. Escalas Psiquiátricas (Hamilton, ISI, etc)
+            hamilton_d_pre: getInt("hamilton_d_pre"), hamilton_d_inter: getInt("hamilton_d_inter"), hamilton_d_post: getInt("hamilton_d_post"),
+            hamilton_a_pre: getInt("hamilton_a_pre"), hamilton_a_inter: getInt("hamilton_a_inter"), hamilton_a_post: getInt("hamilton_a_post"),
+            isi_pre: getInt("isi_pre"), isi_inter: getInt("isi_inter"), isi_post: getInt("isi_post"),
+            beck_pre: getInt('beck_pre'),
+            beck_inter: getInt('beck_inter'),
+            beck_post: getInt('beck_post'),
+
+            banfe_pre: getInt('banfe_pre'),
+            banfe_inter: getInt('banfe_inter'),
+            banfe_post: getInt('banfe_post'),
+
+            eva_pre: getInt('eva_pre'),
+            eva_inter: getInt('eva_inter'),
+            eva_post: getInt('eva_post'),
+            
+            donde_duerme: null,
+            
+            registrado_por: nombreRegistrador
+        };
+
+        // INSERTAR PACIENTE
+        const { data: pacienteInsertado, error: errorPaciente } = await supabase
+            .from('pacientes')
+            .insert([nuevoPaciente])
+            .select()
+            .single();
+
+        if (errorPaciente) throw errorPaciente;
+
+        // INSERTAR SÍNTOMAS (Relación 1:N)
+        // Reutilizamos la lógica de sintomas (Temporalidad, Frecuencia, Gravedad sirven para ánimo también)
+        const sintomas = data.getAll('sintoma');
+        const temporalidades = data.getAll('temporalidad');
+        const frecuencias = data.getAll('frecuencia');
+        const gravedades = data.getAll('gravedad');
+
+        if (sintomas.length > 0 && pacienteInsertado) {
+            const sintomasAInsertar = sintomas.map((sintoma, index) => ({
+                paciente_id: pacienteInsertado.id,
+                sintoma: sintoma.toString(),
+                temporalidad: temporalidades[index]?.toString() || '',
+                frecuencia: frecuencias[index]?.toString() || '',
+                gravedad: gravedades[index]?.toString() || ''
+            }));
+
+            const { error: errorSintomas } = await supabase
+                .from('pacientes_sintomas')
+                .insert(sintomasAInsertar);
+                
+            if (errorSintomas) console.error("Error guardando síntomas:", errorSintomas);
+        }
+
+        // INSERTAR PUNTAJES EXTRA
+        const extraNombres = data.getAll('extra_prueba_nombre');
+        const extraValores = data.getAll('extra_prueba_valor');
+
+        if (extraNombres.length > 0 && pacienteInsertado) {
+            const extrasAInsertar = extraNombres
+                .map((nombre, index) => {
+                    const valor = extraValores[index] ? parseInt(extraValores[index].toString()) : null;
+                    if (!nombre.toString().trim()) return null; 
+
+                    return {
+                        paciente_id: pacienteInsertado.id,
+                        nombre_prueba: nombre.toString(),
+                        puntaje: valor
+                    };
+                })
+                .filter(item => item !== null);
+
+            if (extrasAInsertar.length > 0) {
+                const { error: errorExtras } = await supabase
+                    .from('pacientes_puntajes_extra')
+                    .insert(extrasAInsertar);
+                if (errorExtras) console.error("Error guardando puntajes extra:", errorExtras);
+            }
+        }
+        
+        // Redirigir a la misma página con flag de éxito
+        return Astro.redirect('/registro/animo?exito=true');
+
+    } catch (e) {
+        console.error(e);
+        error = true;
+        mensaje = e instanceof Error ? e.message : "Error desconocido al guardar";
+    }
+}
+---
+
+<Layout title="Registro: Estado de Ánimo | Lab-Somno">
+    <ReturnButton href="/dashboard" text="Volver al dashboard" />
+
+    {registroExitoso && (
+        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm transition-opacity duration-300 px-4">
+            <div class="bg-gray-900 border border-gray-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full transform scale-100 animate-bounce-in">
+                <div class="success-checkmark">
+                    <div class="check-icon">
+                        <span class="icon-line line-tip"></span>
+                        <span class="icon-line line-long"></span>
+                        <div class="icon-circle"></div>
+                        <div class="icon-fix"></div>
+                    </div>
+                </div>
+                <h2 class="text-2xl font-bold text-white mt-4 text-center">¡Registrado!</h2>
+                <p class="text-gray-400 mt-2 text-center">El paciente se guardó correctamente.</p>
+                <p class="text-blue-400 text-sm mt-4 animate-pulse">Redirigiendo a la lista...</p>
+            </div>
+        </div>
+    )}
+
+    {error && (
+        <div class="fixed top-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg text-white shadow-lg bg-red-600 z-50 w-11/12 md:w-auto text-center">
+            {mensaje}
+        </div>
+    )}
+
+    <main class="max-w-7xl mx-auto pt-6 md:pt-10 pb-28 px-4">
+        <div class="flex flex-col items-center justify-center mb-8">
+            <h1 class="text-4xl md:text-6xl font-extrabold text-center leading-tight max-lg:max-w-xs max-md:pt-15">
+                Laboratorio del <span class="bg-gradient-to-r from-blue-600 via-blue-300 to-indigo-500 bg-clip-text text-transparent">sueño</span>
+            </h1>
+            <p class="text-gray-400 mt-2">Expediente de transtorno de estado de ánimo</p>
+		</div>
+
+        <form method="POST" id="form-registro" novalidate>
+            <div class="flex flex-col items-center justify-center space-y-12">
+                
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">SocioDemográficos</h2>
+                    <div class="flex flex-col space-y-4">
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col">
+                                <label for="nombre" class="text-lg font-medium text-gray-300">Nombre completo:</label>
+                                <input type="text" id="nombre" name="nombre" required class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all">
+                            </div>
+                            
+                            <div class="flex grow flex-col md:w-1/3">
+                                <label for="telefono" class="text-lg font-medium text-gray-300">Teléfono:</label>
+                                <input type="number" id="telefono" name="telefono" placeholder="Ej. 999 123 4567" class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all">
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col md:w-1/2"> 
+                                <label for="fecha_nacimiento" class="text-lg font-medium text-gray-300">Fecha de Nacimiento:</label>
+                                <input type="date" id="fecha_nacimiento" name="fecha_nacimiento" required class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all" style="color-scheme: dark;">
+                            </div>
+                            <div class="flex grow flex-col md:w-1/2"> 
+                                <label for="genero" class="text-lg font-medium text-gray-300">Género:</label>
+                                <select id="genero" name="genero" required class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all appearance-none cursor-pointer">
+                                    <option class="bg-gray-900 text-gray-400" value="" disabled selected>Seleccionar</option>
+                                    <option class="bg-gray-900" value="masculino">Masculino</option>
+                                    <option class="bg-gray-900" value="femenino">Femenino</option>
+                                    <option class="bg-gray-900" value="otro">Otro</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col">
+                                <label for="ocupacion" class="text-lg font-medium text-gray-300">Ocupación:</label>
+                                <input type="text" id="ocupacion" name="ocupacion" class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all">
+                            </div>
+                            <div class="flex grow flex-col">
+                                <label for="escolaridad" class="text-lg font-medium text-gray-300">Escolaridad:</label>
+                                <select id="escolaridad" name="escolaridad" class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all appearance-none cursor-pointer">
+                                    <option class="bg-gray-900 text-gray-400" value="" disabled selected>Seleccionar</option>
+                                    <option class="bg-gray-900" value="Primaria">Primaria</option>
+                                    <option class="bg-gray-900" value="Secundaria">Secundaria</option>
+                                    <option class="bg-gray-900" value="Preparatoria">Preparatoria</option>
+                                    <option class="bg-gray-900" value="Licenciatura">Licenciatura</option>
+                                    <option class="bg-gray-900" value="Maestría">Maestría</option>
+                                    <option class="bg-gray-900" value="Doctorado">Doctorado</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col gap-2">
+                                <label class="text-sm font-medium text-gray-300">Referencia (Referido por)</label>
+                                <div class="relative">
+                                    <select name="referencia" required class="w-full bg-gray-900/50 border border-gray-700 text-white p-3 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none appearance-none transition-all cursor-pointer">
+                                        <option value="" disabled selected>Selecciona una opción</option>
+                                        <option value="Servicio Medico">Servicio Médico</option>
+                                        <option value="Privado">Privado</option>
+                                    </select>
+                                    <div class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-gray-400">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">Referencia</h2>
+                    <div class="flex flex-col space-y-4">
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col md:w-1/3">
+                                <label class="text-lg font-medium text-gray-300">Nombre del Especialista:</label>
+                                <input 
+                                    type="text" 
+                                    name="referido_por_nombre" 
+                                    placeholder="Ej. Dr. Juan Pérez" 
+                                    class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all" 
+                                />
+                            </div>
+                            <div class="flex grow flex-col md:w-1/3">
+                                <label class="text-lg font-medium text-gray-300">Teléfono:</label>
+                                <input 
+                                    type="number" 
+                                    name="referido_por_telefono" 
+                                    placeholder="Ej. 999 123 4567" 
+                                    class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all" 
+                                />
+                            </div>
+                            <div class="flex grow flex-col md:w-1/3">
+                                <label class="text-lg font-medium text-gray-300">Correo Electrónico:</label>
+                                <input 
+                                    type="email" 
+                                    name="referido_por_correo" 
+                                    placeholder="correo@ejemplo.com" 
+                                    class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all" 
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">Acompañante</h2>
+                    <div class="flex flex-col space-y-4">
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col md:w-1/3">
+                                <label class="text-lg font-medium text-gray-300">Nombre Completo:</label>
+                                <input 
+                                    type="text" 
+                                    name="acompanante_nombre" 
+                                    placeholder="Nombre del familiar o tutor" 
+                                    class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all" 
+                                />
+                            </div>
+                            <div class="flex grow flex-col md:w-1/3">
+                                <label class="text-lg font-medium text-gray-300">Parentesco:</label>
+                                <select 
+                                    name="acompanante_parentesco" 
+                                    class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all appearance-none cursor-pointer"
+                                >
+                                    <option value="" disabled selected>Seleccionar...</option>
+                                    <option value="Padre/Madre">Padre / Madre</option>
+                                    <option value="Esposo/a">Esposo / Esposa</option>
+                                    <option value="Hermano/a">Hermano / Hermana</option>
+                                    <option value="Hijo/a">Hijo / Hija</option>
+                                    <option value="Otro">Otro / Amigo</option>
+                                </select>
+                            </div>
+                            <div class="flex grow flex-col md:w-1/3">
+                                <label class="text-lg font-medium text-gray-300">Teléfono:</label>
+                                <input 
+                                    type="number" 
+                                    name="acompanante_telefono" 
+                                    placeholder="Para emergencias..." 
+                                    class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all" 
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">Diagnostico</h2>
+                    <div class="flex flex-col">
+                        <textarea id="motivo" name="motivo" required rows="4" placeholder="Describe detalladamente el diagnostico" class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y text-white transition-all"></textarea>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">Síntomas Latentes</h2>
+                    
+                    <div id="lista-sintomas" class="space-y-8">
+                        <SintomaGroup numero={1} />
+                    </div>
+
+                    <div class="mt-4 flex justify-end">
+                        <button type="button" id="btn-add-sintoma" class="flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-white transition-colors border border-blue-500/30 hover:bg-blue-600/20 px-4 py-2 rounded-lg cursor-pointer">
+                            <span class="text-xl leading-none">+</span> Agregar otro síntoma
+                        </button>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">Historia Clínica</h2>
+                    <div class="flex flex-col space-y-4">
+                        <div class="flex flex-col">
+                            <label for="antecedentes" class="text-lg font-medium text-gray-300">Antecedentes Familiares y Personales</label>
+                            <textarea id="antecedentes" name="antecedentes" rows="4" placeholder="Diagnósticos previos, tratamientos psiquiátricos anteriores, historia familiar..." class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y text-white transition-all"></textarea>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0 mt-8">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">
+                        Riesgo Suicida
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        <div class="flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20">
+                            <label class="text-lg font-medium text-gray-300">¿Ha presentado ideación suicida?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2 cursor-pointer hover:text-white transition">
+                                    <input type="radio" name="ideacion_suicida" value="si" class="accent-blue-500 trigger-condicional" data-target="div_ideacion_desc"> 
+                                    Sí
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer hover:text-white transition">
+                                    <input type="radio" name="ideacion_suicida" value="no" class="accent-blue-500 trigger-condicional" data-target="div_ideacion_desc"> 
+                                    No
+                                </label>
+                            </div>
+                            
+                            <div id="div_ideacion_desc" class="hidden mt-3 animate-fade-in-down">
+                                <label for="ideacion_suicida_desc" class="text-sm font-medium text-blue-300 block mb-1">Describa la ideación:</label>
+                                <input 
+                                    type="text" 
+                                    id="ideacion_suicida_desc" 
+                                    name="ideacion_suicida_desc" 
+                                    class="w-full p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white placeholder-gray-500" 
+                                    placeholder="Frecuencia, planificación, detonantes..."
+                                >
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20">
+                            <label class="text-lg font-medium text-gray-300">¿Ha presentado planeación suicida?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2 cursor-pointer hover:text-white transition">
+                                    <input type="radio" name="planeacion_suicida" value="si" class="accent-blue-500 trigger-condicional" data-target="div_planeacion_desc"> 
+                                    Sí
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer hover:text-white transition">
+                                    <input type="radio" name="planeacion_suicida" value="no" class="accent-blue-500 trigger-condicional" data-target="div_planeacion_desc"> 
+                                    No
+                                </label>
+                            </div>
+                            
+                            <div id="div_planeacion_desc" class="hidden mt-3 animate-fade-in-down">
+                                <label for="planeacion_suicida_desc" class="text-sm font-medium text-blue-300 block mb-1">Describa la planeación:</label>
+                                <input 
+                                    type="text" 
+                                    id="planeacion_suicida_desc" 
+                                    name="planeacion_suicida_desc" 
+                                    class="w-full p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white placeholder-gray-500" 
+                                    placeholder="Detalles del plan, acceso a medios, fecha establecida..."
+                                >
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20">
+                            <label class="text-lg font-medium text-gray-300">¿Ha tenido intentos suicidas?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2 cursor-pointer hover:text-white transition">
+                                    <input type="radio" name="intento_suicida" value="si" class="accent-blue-500 trigger-condicional" data-target="div_intento_desc"> 
+                                    Sí
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer hover:text-white transition">
+                                    <input type="radio" name="intento_suicida" value="no" class="accent-blue-500 trigger-condicional" data-target="div_intento_desc"> 
+                                    No
+                                </label>
+                            </div>
+                            
+                            <div id="div_intento_desc" class="hidden mt-3 animate-fade-in-down">
+                                <label for="intento_suicida_desc" class="text-sm font-medium text-blue-300 block mb-1">Describa el/los intentos:</label>
+                                <input 
+                                    type="text" 
+                                    id="intento_suicida_desc" 
+                                    name="intento_suicida_desc" 
+                                    class="w-full p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white placeholder-gray-500" 
+                                    placeholder="Fecha aprox, método, consecuencias..."
+                                >
+                            </div>
+                        </div>
+
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">Hábitos y Sustancias</h2>
+                    
+                    <div class="flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20 mb-6">
+                        <label class="text-lg font-medium text-gray-300">¿Realiza ejercicio?</label>
+                        <div class="flex gap-6">
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="ejercicio" value="si" class="accent-blue-500 trigger-condicional" data-target="div_horas_ejercicio"> Sí</label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="ejercicio" value="no" class="accent-blue-500 trigger-condicional" data-target="div_horas_ejercicio"> No</label>
+                        </div>
+                        <div id="div_horas_ejercicio" class="hidden mt-3 animate-fade-in-down">
+                            <label for="horas_ejercicio" class="text-sm font-medium text-blue-300 block mb-1">Horas a la semana (HH:MM):</label>
+                            <input type="text" id="horas_ejercicio" name="horas_ejercicio" class="w-full md:w-1/2 p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white" placeholder="Ej. 2:30">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20">
+                            <label class="text-lg font-medium text-gray-300">¿Fuma?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="fuma" value="si" class="accent-blue-500 trigger-condicional" data-target="div_consumo_fuma"> Sí</label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="fuma" value="no" class="accent-blue-500 trigger-condicional" data-target="div_consumo_fuma"> No</label>
+                            </div>
+                            <div id="div_consumo_fuma" class="hidden mt-3 animate-fade-in-down">
+                                <label for="cigarros_semana" class="text-sm font-medium text-blue-300 block mb-1">Cigarros a la semana:</label>
+                                <input type="number" id="cigarros_semana" name="cigarros_semana" min="0" class="w-full p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white">
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20">
+                            <label class="text-lg font-medium text-gray-300">¿Consume alcohol?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="alcohol" value="si" class="accent-blue-500 trigger-condicional" data-target="div_consumo_alcohol"> Sí</label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="alcohol" value="no" class="accent-blue-500 trigger-condicional" data-target="div_consumo_alcohol"> No</label>
+                            </div>
+                            <div id="div_consumo_alcohol" class="hidden mt-3 animate-fade-in-down">
+                                <label for="cervezas_semana" class="text-sm font-medium text-blue-300 block mb-1">Cervezas/Copas a la semana:</label>
+                                <input type="number" id="cervezas_semana" name="cervezas_semana" min="0" class="w-full p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white">
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20">
+                            <label class="text-lg font-medium text-gray-300">¿Consume café?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="cafe" value="si" class="accent-blue-500 trigger-condicional" data-target="div_consumo_cafe"> Sí</label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="cafe" value="no" class="accent-blue-500 trigger-condicional" data-target="div_consumo_cafe"> No</label>
+                            </div>
+                            <div id="div_consumo_cafe" class="hidden mt-3 animate-fade-in-down">
+                                <label for="tazas_cafe_semana" class="text-sm font-medium text-blue-300 block mb-1">Tazas a la semana:</label>
+                                <input type="number" id="tazas_cafe_semana" name="tazas_cafe_semana" min="0" class="w-full p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white">
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20">
+                            <label class="text-lg font-medium text-gray-300">¿Consume té?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="te" value="si" class="accent-blue-500 trigger-condicional" data-target="div_consumo_te"> Sí</label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="te" value="no" class="accent-blue-500 trigger-condicional" data-target="div_consumo_te"> No</label>
+                            </div>
+                            <div id="div_consumo_te" class="hidden mt-3 animate-fade-in-down">
+                                <label for="tazas_te_semana" class="text-sm font-medium text-blue-300 block mb-1">Tazas a la semana:</label>
+                                <input type="number" id="tazas_te_semana" name="tazas_te_semana" min="0" class="w-full p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white">
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0 mt-8">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">
+                        Trastornos del Estado de Ánimo
+                    </h2>
+                    
+                    <div class="flex flex-col space-y-6">
+                        <p class="text-xs text-blue-400 font-bold uppercase tracking-wider text-center md:text-right">
+                            * Seleccione todas las opciones que apliquen
+                        </p>
+
+                        <div class="grid grid-cols-1 gap-6">
+                            {trastornosOptions.map((grupo) => (
+                                <div class="bg-gray-800/20 border border-gray-700/50 rounded-xl overflow-hidden">
+                                    <div class="px-4 py-2 border-b border-gray-700/50 flex items-center gap-2">
+                                        <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide">{grupo.categoria}</h3>
+                                    </div>
+                                    
+                                    <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3">
+                                        {grupo.opciones.map((opcion) => (
+                                            <label class="flex items-start gap-3 cursor-pointer hover:bg-white/5 p-2 rounded-lg transition-colors group/check">
+                                                <input 
+                                                    type="checkbox" 
+                                                    name="trastornos_animo" 
+                                                    value={opcion} 
+                                                    class="accent-blue-500 w-5 h-5 rounded mt-0.5 shrink-0 focus:ring-blue-500 cursor-pointer"
+                                                />
+                                                <span class="text-sm text-gray-400 group-hover/check:text-white transition-colors leading-tight">
+                                                    {opcion}
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0 mt-8">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white/20 text-center text-gray-200 w-fit mx-auto px-10">
+                        Tratamiento Farmacológico
+                    </h2>
+                    
+                    <div class="p-6 border border-gray-700/50 rounded-xl bg-gray-800/20">
+
+                        <div id="lista-farmacos" class="space-y-4">
+                            <div class="p-4 bg-slate-900/50 rounded-xl border border-white/5 relative group transition-all hover:border-blue-500/30 item-farmaco">
+                                <div class="grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-4">
+                                    <div class="md:col-span-8">
+                                        <label class="block text-[10px] uppercase font-bold text-blue-400 mb-1">Medicamento</label>
+                                        <input type="text" name="farmacos_nombres" placeholder="Ej. Fluoxetina" class="w-full bg-transparent border-b border-gray-700 text-white text-sm focus:border-blue-500 outline-none py-1 placeholder-gray-600">
+                                    </div>
+                                    <div class="md:col-span-4">
+                                        <label class="block text-[10px] uppercase font-bold text-blue-400 mb-1">Dosis</label>
+                                        <input type="text" name="farmacos_dosis" placeholder="Ej. 20mg" class="w-full bg-transparent border-b border-gray-700 text-white text-sm focus:border-blue-500 outline-none py-1 placeholder-gray-600">
+                                    </div>
+
+                                    <div class="md:col-span-8">
+                                        <label class="block text-[10px] uppercase font-bold text-blue-400 mb-1">Motivo / Diagnóstico</label>
+                                        <input type="text" name="farmacos_motivos" placeholder="Ej. Trastorno depresivo mayor" class="w-full bg-transparent border-b border-gray-700 text-white text-sm focus:border-blue-500 outline-none py-1 placeholder-gray-600">
+                                    </div>
+                                    <div class="md:col-span-4">
+                                        <label class="block text-[10px] uppercase font-bold text-blue-400 mb-1">Tiempo de consumo</label>
+                                        <div class="flex items-center gap-3">
+                                            <input type="text" name="farmacos_tiempos" placeholder="Ej. 6 meses" class="w-full bg-transparent border-b border-gray-700 text-white text-sm focus:border-blue-500 outline-none py-1 placeholder-gray-600">
+                                        </div>
+                                    </div>
+
+                                    <div class="flex justify-between md:col-span-12 freq-container pt-2 border-t border-white/5">
+                                        <div>
+                                            <label class="block text-[10px] uppercase font-bold text-blue-400 mb-2">Frecuencia (Horario)</label>
+                                            <input type="hidden" name="farmacos_frecuencias" class="input-frecuencia-real" value="">
+                                            <div class="flex flex-wrap gap-4">
+                                                <label class="flex items-center gap-2 cursor-pointer group/chk">
+                                                    <input type="checkbox" value="Mañana" class="chk-freq accent-blue-500 w-4 h-4 rounded cursor-pointer">
+                                                    <span class="text-sm text-gray-400 group-hover/chk:text-white transition-colors">Mañana</span>
+                                                </label>
+                                                <label class="flex items-center gap-2 cursor-pointer group/chk">
+                                                    <input type="checkbox" value="Tarde" class="chk-freq accent-blue-500 w-4 h-4 rounded cursor-pointer">
+                                                    <span class="text-sm text-gray-400 group-hover/chk:text-white transition-colors">Tarde</span>
+                                                </label>
+                                                <label class="flex items-center gap-2 cursor-pointer group/chk">
+                                                    <input type="checkbox" value="Noche" class="chk-freq accent-blue-500 w-4 h-4 rounded cursor-pointer">
+                                                    <span class="text-sm text-gray-400 group-hover/chk:text-white transition-colors">Noche</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <button type="button" class="btn-remove-farmaco text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer bg-gray-800 p-1.5 rounded-md hover:bg-red-900/20 shrink-0" title="Eliminar">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-between mt-4">
+                            <p class="text-[10px] text-gray-500 text-center">
+                                Si no consume medicamentos, deje los campos vacíos.
+                            </p>
+                            <div class="flex justify-between items-center mb-6">
+                                <button type="button" id="btn-add-farmaco" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-lg shadow-blue-900/20">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                                    Agregar Fármaco
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-5xl px-2 md:px-0">
+                    <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white text-center text-gray-200 w-fit mx-auto px-10">Puntajes y Escalas</h2>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="text-gray-400 text-xs uppercase border-b border-gray-700">
+                                    <th class="py-3 font-medium">Prueba / Escala</th>
+                                    <th class="py-3 font-medium text-center text-blue-400">Pre</th>
+                                    <th class="py-3 font-medium text-center text-purple-400">Inter</th>
+                                    <th class="py-3 font-medium text-center text-emerald-400">Post</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-sm divide-y divide-gray-800">
+                                {['hamilton_d', 'hamilton_a', 'isi', 'beck', 'banfe', 'eva'].map((score) => (
+                                    <tr class="hover:bg-gray-800/30 transition-colors">
+                                        <td class="py-3 pr-4 font-medium text-gray-300 capitalize">
+                                            {score
+                                                .replace('hamilton_d', 'Hamilton D')
+                                                .replace('hamilton_a', 'Hamilton A')
+                                                .replace('isi', 'Índice Severidad Insomnio (ISI)')
+                                                .replace('beck', 'Inventario de Depresión de Beck')
+                                                .replace('banfe', 'BANFE')
+                                                .replace('eva', 'Escala de Dolor (EVA)')}
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="number" name={`${score}_pre`} placeholder="-" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-center text-white focus:border-blue-500 focus:outline-none" />
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="number" name={`${score}_inter`} placeholder="-" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-center text-white focus:border-purple-500 focus:outline-none" />
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="number" name={`${score}_post`} placeholder="-" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-center text-white focus:border-emerald-500 focus:outline-none" />
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <div class="pt-10 pb-10">
+                    <button type="submit" class="w-full md:w-auto bg-blue-600 text-white text-lg font-semibold px-8 py-3 rounded-xl hover:bg-blue-500 hover:scale-105 hover:shadow-[0_0_20px_rgba(147,51,234,0.5)] transition duration-300 cursor-pointer active:scale-95">
+                        Registrar Paciente de Ánimo
+                    </button>
+                </div>
+            </div>
+        </form>
+    </main>
+
+    <dialog id="modal-errores" class="m-auto bg-gray-900 border border-red-500/50 rounded-2xl p-6 shadow-2xl backdrop:backdrop-blur-sm w-full max-w-md text-left animate-shake">
+        <div class="flex flex-col items-center text-center">
+            <div class="p-3 bg-red-500/20 rounded-full mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-8 h-8 text-red-500">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+            </div>
+            
+            <h3 class="text-xl font-bold text-white mb-2">Faltan datos obligatorios</h3>
+            <p class="text-gray-400 text-sm mb-4">Por favor, completa los siguientes campos para continuar:</p>
+            
+            <ul id="lista-errores" class="text-left w-full bg-red-500/10 border border-red-500/20 rounded-lg p-3 space-y-1 mb-6 list-disc list-inside text-red-200 text-sm">
+            </ul>
+
+            <button type="button" onclick="document.getElementById('modal-errores').close()" class="w-full bg-red-600 hover:bg-red-500 text-white font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer">
+                Entendido
+            </button>
+        </div>
+    </dialog>
+</Layout>
+
+<style>
+    /* Estilos copiados de sueno.astro para consistencia */
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+        20%, 40%, 60%, 80% { transform: translateX(4px); }
+    }
+    .animate-shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+
+    @keyframes fadeInDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in-down { animation: fadeInDown 0.3s ease-out forwards; }
+
+    /* Animación de Checkmark (Éxito) */
+    .success-checkmark {
+        width: 80px; height: 115px; margin: 0 auto;
+        .check-icon {
+            width: 80px; height: 80px; position: relative; border-radius: 50%; box-sizing: content-box; border: 4px solid #9333ea; /* Purple border */
+            &::before { top: 3px; left: -2px; width: 30px; transform-origin: 100% 50%; border-radius: 100px 0 0 100px; }
+            &::after { top: 0; left: 30px; width: 60px; transform-origin: 0 50%; border-radius: 0 100px 100px 0; animation: rotate-circle 4.25s ease-in; }
+            &::before, &::after { content: ''; height: 100px; position: absolute; background: #111827; transform: rotate(-45deg); }
+            
+            .icon-line {
+                height: 5px; background-color: #9333ea; /* Purple line */
+                display: block; border-radius: 2px; position: absolute; z-index: 10;
+                &.line-tip { top: 46px; left: 14px; width: 25px; transform: rotate(45deg); animation: icon-line-tip 0.75s; }
+                &.line-long { top: 38px; right: 8px; width: 47px; transform: rotate(-45deg); animation: icon-line-long 0.75s; }
+            }
+            .icon-circle { top: -4px; left: -4px; z-index: 10; width: 80px; height: 80px; border-radius: 50%; position: absolute; box-sizing: content-box; border: 4px solid rgba(147, 51, 234, .5); }
+            .icon-fix { top: 8px; width: 5px; left: 26px; z-index: 1; height: 85px; position: absolute; transform: rotate(-45deg); background-color: #111827; }
+        }
+    }
+
+    @keyframes rotate-circle { 0% { transform: rotate(-45deg); } 5% { transform: rotate(-45deg); } 12% { transform: rotate(-405deg); } 100% { transform: rotate(-405deg); } }
+    @keyframes icon-line-tip { 0% { width: 0; left: 1px; top: 19px; } 54% { width: 0; left: 1px; top: 19px; } 70% { width: 50px; left: -8px; top: 37px; } 84% { width: 17px; left: 21px; top: 48px; } 100% { width: 25px; left: 14px; top: 46px; } }
+    @keyframes icon-line-long { 0% { width: 0; right: 46px; top: 54px; } 65% { width: 0; right: 46px; top: 54px; } 84% { width: 55px; right: 0px; top: 35px; } 100% { width: 47px; right: 8px; top: 38px; } }
+</style>
+
+<script is:inline>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        const lista = document.getElementById('lista-farmacos');
+        const btnAdd = document.getElementById('btn-add-farmaco');
+
+        const setupFilaFarmaco = (elemento) => {
+            const checkboxes = elemento.querySelectorAll('.chk-freq');
+            const inputOculto = elemento.querySelector('.input-frecuencia-real');
+            const btnBorrar = elemento.querySelector('.btn-remove-farmaco');
+
+            checkboxes.forEach(chk => {
+                chk.addEventListener('change', () => {
+                    const seleccionados = Array.from(checkboxes)
+                        .filter(c => c.checked)
+                        .map(c => c.value);
+                    
+                    inputOculto.value = seleccionados.join(', ');
+                });
+            });
+
+            if (btnBorrar) {
+                btnBorrar.addEventListener('click', () => {
+                    elemento.remove();
+                });
+            }
+        };
+
+        const primeraFila = document.querySelector('.item-farmaco');
+        if (primeraFila) setupFilaFarmaco(primeraFila);
+
+        if (btnAdd && lista) {
+            btnAdd.addEventListener('click', () => {
+                const div = document.createElement('div');
+                div.className = "p-4 bg-slate-900/50 rounded-xl border border-white/5 relative group transition-all hover:border-blue-500/30 animate-fade-in item-farmaco";
+                
+                div.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-4">
+                        <div class="md:col-span-8">
+                            <label class="block text-[10px] uppercase font-bold text-blue-400 mb-1">Medicamento</label>
+                            <input type="text" name="farmacos_nombres" placeholder="Ej. Fluoxetina" class="w-full bg-transparent border-b border-gray-700 text-white text-sm focus:border-blue-500 outline-none py-1 placeholder-gray-600">
+                        </div>
+                        <div class="md:col-span-4">
+                            <label class="block text-[10px] uppercase font-bold text-blue-400 mb-1">Dosis</label>
+                            <input type="text" name="farmacos_dosis" placeholder="Ej. 20mg" class="w-full bg-transparent border-b border-gray-700 text-white text-sm focus:border-blue-500 outline-none py-1 placeholder-gray-600">
+                        </div>
+
+                        <div class="md:col-span-8">
+                            <label class="block text-[10px] uppercase font-bold text-blue-400 mb-1">Motivo / Diagnóstico</label>
+                            <input type="text" name="farmacos_motivos" placeholder="Ej. Trastorno depresivo mayor" class="w-full bg-transparent border-b border-gray-700 text-white text-sm focus:border-blue-500 outline-none py-1 placeholder-gray-600">
+                        </div>
+                        <div class="md:col-span-4">
+                            <label class="block text-[10px] uppercase font-bold text-blue-400 mb-1">Tiempo de consumo</label>
+                            <div class="flex items-center gap-3">
+                                <input type="text" name="farmacos_tiempos" placeholder="Ej. 6 meses" class="w-full bg-transparent border-b border-gray-700 text-white text-sm focus:border-blue-500 outline-none py-1 placeholder-gray-600">
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between md:col-span-12 freq-container pt-2 border-t border-white/5">
+                            <div>
+                                <label class="block text-[10px] uppercase font-bold text-blue-400 mb-2">Frecuencia (Horario)</label>
+                                <input type="hidden" name="farmacos_frecuencias" class="input-frecuencia-real" value="">
+                                <div class="flex flex-wrap gap-4">
+                                    <label class="flex items-center gap-2 cursor-pointer group/chk">
+                                        <input type="checkbox" value="Mañana" class="chk-freq accent-blue-500 w-4 h-4 rounded cursor-pointer">
+                                        <span class="text-sm text-gray-400 group-hover/chk:text-white transition-colors">Mañana</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer group/chk">
+                                        <input type="checkbox" value="Tarde" class="chk-freq accent-blue-500 w-4 h-4 rounded cursor-pointer">
+                                        <span class="text-sm text-gray-400 group-hover/chk:text-white transition-colors">Tarde</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer group/chk">
+                                        <input type="checkbox" value="Noche" class="chk-freq accent-blue-500 w-4 h-4 rounded cursor-pointer">
+                                        <span class="text-sm text-gray-400 group-hover/chk:text-white transition-colors">Noche</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="flex items-center">
+                                <button type="button" class="btn-remove-farmaco text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer bg-gray-800 p-1.5 rounded-md hover:bg-red-900/20 shrink-0" title="Eliminar">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                lista.appendChild(div);
+                setupFilaFarmaco(div);
+            });
+        }
+
+        // 1. LOGICA DE INTERFAZ (Condicionales Yes/No)
+        const triggers = document.querySelectorAll('.trigger-condicional');
+        triggers.forEach(trigger => {
+            trigger.addEventListener('change', (e) => {
+                const target = e.target; 
+                const targetId = target.dataset.target;
+                if (!targetId) return;
+                
+                const targetDiv = document.getElementById(targetId);
+                if (targetDiv) {
+                    if (target.value === 'si') {
+                        targetDiv.classList.remove('hidden');
+                        targetDiv.querySelectorAll('input').forEach(i => i.removeAttribute('disabled'));
+                    } else {
+                        targetDiv.classList.add('hidden');
+                        targetDiv.querySelectorAll('input').forEach((i) => {
+                            i.value = '';
+                            i.setAttribute('disabled', 'true');
+                        });
+                    }
+                }
+            });
+        });
+
+        // 2. LOGICA DE SINTOMAS DINAMICOS
+        const btnAddSintoma = document.getElementById('btn-add-sintoma');
+        const listaSintomas = document.getElementById('lista-sintomas');
+        
+        const setupDeleteSintoma = (card) => {
+            const btnDelete = card.querySelector('.btn-delete-sintoma');
+            if (btnDelete) {
+                btnDelete.classList.remove('hidden');
+                btnDelete.addEventListener('click', () => {
+                    const inputs = card.querySelectorAll('input');
+                    let estaVacio = true;
+                    inputs.forEach(input => { if (input.value.trim() !== '') estaVacio = false; });
+
+                    if (estaVacio) {
+                        card.remove();
+                        document.querySelectorAll('.sintoma-group').forEach((grupo, index) => {
+                            const titulo = grupo.querySelector('.sintoma-titulo');
+                            if (titulo) titulo.textContent = `Síntoma ${index + 1}`;
+                        });
+                    } else {
+                        alert('⚠️ Solo puedes eliminar un campo extra si está vacío.');
+                    }
+                });
+            }
+        };
+
+        if (btnAddSintoma && listaSintomas) {
+            btnAddSintoma.addEventListener('click', () => {
+                const original = listaSintomas.querySelector('.sintoma-group');
+                if (!original) return;
+
+                const clone = original.cloneNode(true);
+                clone.querySelectorAll('input').forEach((i) => i.value = '');
+                setupDeleteSintoma(clone);
+
+                const totalSintomas = listaSintomas.querySelectorAll('.sintoma-group').length + 1;
+                const titulo = clone.querySelector('.sintoma-titulo');
+                if (titulo) titulo.textContent = `Síntoma ${totalSintomas}`;
+
+                listaSintomas.appendChild(clone);
+            });
+        }
+
+        // 3. VALIDACIÓN DE FORMULARIO
+        const form = document.getElementById('form-registro');
+        const modalErrores = document.getElementById('modal-errores');
+        const listaErrores = document.getElementById('lista-errores');
+        
+        if (form && modalErrores && listaErrores) {
+            form.addEventListener('submit', (e) => {
+                const camposFaltantes = [];
+                const inputsRequeridos = form.querySelectorAll('input[required], select[required], textarea[required]');
+                
+                inputsRequeridos.forEach((input) => {
+                    const el = input;
+                    if (!el.validity.valid) {
+                        let nombreCampo = el.name;
+                        const id = el.id;
+                        if (id) {
+                            const label = document.querySelector(`label[for="${id}"]`);
+                            if (label && label.textContent) {
+                                nombreCampo = label.textContent.replace(/[:*]/g, '').trim();
+                            }
+                        }
+                        camposFaltantes.push(nombreCampo);
+                        el.classList.add('border-red-500', 'ring-1', 'ring-red-500');
+                        el.addEventListener('input', () => {
+                            el.classList.remove('border-red-500', 'ring-1', 'ring-red-500');
+                        }, { once: true });
+                    }
+                });
+                
+                if (camposFaltantes.length > 0) {
+                    e.preventDefault();
+                    listaErrores.innerHTML = '';
+                    camposFaltantes.slice(0, 7).forEach(campo => {
+                        const li = document.createElement('li');
+                        li.textContent = campo;
+                        listaErrores.appendChild(li);
+                    });
+                    if (camposFaltantes.length > 7) {
+                        const li = document.createElement('li');
+                        li.textContent = `...y ${camposFaltantes.length - 7} campos más.`;
+                        li.className = "list-none italic opacity-70 mt-1";
+                        listaErrores.appendChild(li);
+                    }
+                    modalErrores.showModal();
+                }
+            });
+        }
+
+        // 4. REDIRECCIÓN TRAS ÉXITO
+        const modalExito = document.querySelector('.success-checkmark');
+        if (modalExito) {
+            setTimeout(() => {
+                window.location.replace("/lista");
+            }, 2500);
+        }
+    });
+</script>

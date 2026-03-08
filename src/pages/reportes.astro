@@ -1,0 +1,173 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ReturnButton from '../components/ReturnButton.astro';
+
+const reportesDisponibles = [
+    {
+        titulo: "Cama vs Hamaca",
+        descripcion: "Exportación en CSV para investigación. Cruce de variables: Lugar de sueño vs Escalas (Epworth, PSQI, Berlin).",
+        icono: "chart",
+        color: "rose", 
+        tag: "Investigación",
+        id: "csv-habitos"
+    },
+];
+
+const getColors = (color: string) => {
+    const map: Record<string, string> = {
+        blue: "bg-blue-500/10 text-blue-400 border-blue-500/20 group-hover:border-blue-500/50 group-hover:shadow-blue-900/20",
+        emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 group-hover:border-emerald-500/50 group-hover:shadow-emerald-900/20",
+        purple: "bg-purple-500/10 text-purple-400 border-purple-500/20 group-hover:border-purple-500/50 group-hover:shadow-purple-900/20",
+        amber: "bg-amber-500/10 text-amber-400 border-amber-500/20 group-hover:border-amber-500/50 group-hover:shadow-amber-900/20",
+        indigo: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20 group-hover:border-indigo-500/50 group-hover:shadow-indigo-900/20",
+        rose: "bg-rose-500/10 text-rose-400 border-rose-500/20 group-hover:border-rose-500/50 group-hover:shadow-rose-900/20",
+    };
+    return map[color] || map.blue;
+};
+---
+
+<Layout title="Generador de Reportes | Lab-Somno">
+	<ReturnButton href="/dashboard" text="Volver al dashboard" />
+    <div class="min-h-screen p-4 md:p-8">
+        
+        <div class="max-w-7xl mx-auto mb-10 relative">
+            <div class="absolute -top-10 -left-10 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl pointer-events-none"></div>
+            <h1 class="max-md:max-w-xs max-md:pt-10 max-lg:max-w-xl text-4xl md:text-6xl font-extrabold text-balance text-center">Catalogo de <span class="bg-gradient-to-r from-blue-500 via-blue-300 to-blue-600 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]">reportes</span></h1>
+            <p class=" pt-5 text-lg text-gray-400 text-center">
+                Seleccione el tipo de documento que desea generar. Puede ajustar los parámetros de salida en el panel lateral.
+            </p>
+        </div>
+
+        <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <div class="lg:col-span-2 space-y-6">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {reportesDisponibles.map((rep) => {
+                        const styles = getColors(rep.color);
+                        return (
+                            <button 
+                                data-titulo={rep.titulo}
+                                data-id={rep.id}
+                                class={`btn-generar group relative p-6 rounded-2xl border text-left transition-all duration-300 hover:-translate-y-1 hover:bg-slate-800/40 cursor-pointer ${styles}`}
+                            >
+                                <div class="flex justify-between items-start mb-4">
+                                    <span class={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-black/20 border border-white/5`}>
+                                        {rep.tag}
+                                    </span>
+                                    
+                                    <div class="p-2 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors">
+                                        {rep.icono === 'medical' && <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
+                                        {rep.icono === 'activity' && <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
+                                        {rep.icono === 'chart' && <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>}
+                                        {rep.icono === 'document' && <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
+                                        {rep.icono === 'moon' && <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>}
+                                    </div>
+                                </div>
+
+                                <h3 class="text-lg font-bold text-white mb-2">{rep.titulo}</h3>
+                                <p class="text-sm text-gray-400 leading-relaxed mb-6">{rep.descripcion}</p>
+
+                                <div class="flex items-center gap-2 text-xs font-medium opacity-60 group-hover:opacity-100 transition-opacity">
+                                    <span>Generar archivo</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                                </div>
+                            </button>
+                        )
+                    })}
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                
+                <div class="bg-slate-900/50 border border-white/10 rounded-2xl p-6 backdrop-blur-sm sticky top-6">
+                    <div class="flex items-center gap-2 mb-6 pb-4 border-b border-white/5">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        <h2 class="text-sm font-bold text-gray-300 uppercase tracking-wide">Opciones de Exportación</h2>
+                    </div>
+
+                    <form class="space-y-5">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-2 uppercase">Periodo de Datos</label>
+                            <div class="relative">
+                                <select class="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:border-blue-500 outline-none appearance-none cursor-pointer">
+                                    <option>Última Sesión / Consulta</option>
+                                    <option selected>Últimos 30 días</option>
+                                    <option>Historial Completo</option>
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div class="mt-6 pt-4 border-t border-white/5">
+                        <div class="p-3 rounded-lg bg-blue-900/10 border border-blue-500/10 flex gap-3">
+                            <div class="text-blue-400 mt-0.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            </div>
+                            <p class="text-xs text-blue-200/70 leading-relaxed">
+                                Estos ajustes se aplicarán al siguiente reporte que genere.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</Layout>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const botones = document.querySelectorAll('.btn-generar');
+
+        botones.forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const titulo = btn.getAttribute('data-titulo');
+                const reporteId = btn.getAttribute('data-id');
+                const originalHtml = btn.innerHTML;
+                
+                btn.classList.add('opacity-75', 'cursor-not-allowed');
+                btn.setAttribute('disabled', 'true');
+                btn.innerHTML = `
+                    <div class="flex items-center justify-center gap-2 h-full">
+                        <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <span>Generando...</span>
+                    </div>
+                `;
+                
+                try {
+                    if (reporteId === 'csv-habitos') {
+                        const response = await fetch('/api/exportar-habitos');
+                        
+                        if (response.ok) {
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `reporte_habitos_${new Date().toISOString().split('T')[0]}.csv`;
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            a.remove();
+                        } else {
+                            throw new Error('Error en el servidor al generar CSV');
+                        }
+                    } else {
+                        await new Promise(r => setTimeout(r, 1500));
+                        alert(`El módulo para "${titulo}" está en construcción.`);
+                    }
+                } catch (error) {
+                    console.error(error);
+                    alert("Hubo un error al generar el reporte.");
+                } finally {
+                    btn.innerHTML = originalHtml;
+                    btn.classList.remove('opacity-75', 'cursor-not-allowed');
+                    btn.removeAttribute('disabled');
+                }
+            });
+        });
+    });
+</script>

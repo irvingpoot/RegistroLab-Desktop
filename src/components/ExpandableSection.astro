@@ -1,0 +1,29 @@
+---
+
+/**
+ * @component ExpandableSection
+ * @description Contenedor colapsable con animación suave de altura.
+ * * TÉCNICA CSS:
+ * - Utiliza la transición `grid-rows-[0fr]` -> `grid-rows-[1fr]` para animar la altura
+ * desde 0 hasta "auto" (contenido dinámico).
+ * * USO:
+ * - Este componente inicia oculto (`opacity-0`, `rows-0`).
+ * - Requiere un script externo (en la página padre) que seleccione este elemento por su `id`
+ * y alterne las clases para mostrarlo.
+ * * PROPS:
+ * @prop {string} id - Identificador único requerido para manipular el estado de apertura desde JS.
+ */
+
+interface Props {
+    id: string;
+}
+
+const { id } = Astro.props;
+---
+
+<div id={id} class="grid grid-rows-[0fr] opacity-0 transition-all duration-500 ease-in-out">
+    <div class="overflow-hidden">
+        <div class="pl-6 border-l-4 border-blue-600 py-2 mt-2">
+        <slot /> </div>
+    </div>
+</div>

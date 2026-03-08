@@ -1,0 +1,510 @@
+---
+/**
+ * @file dashboard.astro
+ * @description Panel de control principal del usuario.
+ * OPTIMIZACIÓN: Se implementó Promise.all para cargar usuarios y citas en paralelo.
+ */
+
+import Layout from "../layouts/Layout.astro"
+import { createClient } from "@supabase/supabase-js"
+import SystemUpdates from "../components/SystemUpdate.astro";
+import PatientTypeModal from "../components/PatientTypeModal.astro";
+import { getLocalUser } from "../utils/localUser";
+
+const user = getLocalUser(Astro.cookies);
+
+if (!user) {
+    return Astro.redirect('/');
+}
+const nombreUsuario = user?.firstName || "Usuario";
+
+const supabase = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.SUPABASE_KEY
+);
+
+const now = new Date();
+const offsetMerida = 6 * 60 * 60 * 1000; 
+const nowMerida = new Date(now.getTime() - offsetMerida);
+const year = nowMerida.getUTCFullYear();
+const month = String(nowMerida.getUTCMonth() + 1).padStart(2, '0');
+const day = String(nowMerida.getUTCDate()).padStart(2, '0');
+const fechaSQL = `${year}-${month}-${day}`;
+const inicioDia = `${fechaSQL}T00:00:00-06:00`;
+const finDia = `${fechaSQL}T23:59:59-06:00`;
+
+const citasPromise = supabase
+    .from('citas')
+    .select('id, fecha_hora, nombre, estado') 
+    .gte('fecha_hora', inicioDia)
+    .lte('fecha_hora', finDia)
+    .order('fecha_hora', { ascending: true });
+
+const notificacionesPromise = supabase
+    .from('respuestas_cuestionarios')
+    .select(`
+        id,
+        cuestionario,
+        updated_at,
+        pacientes ( id, nombre, tipo_paciente )
+    `)
+    .eq('visto', false)
+    .order('updated_at', { ascending: false })
+    .limit(10);
+
+
+const [citasResult, notificacionesResult] = await Promise.all([
+    citasPromise, 
+    notificacionesPromise
+]);
+
+const { data: dataCitas, error } = citasResult;
+if (error) console.error("Error Dashboard:", error);
+
+const notificaciones = notificacionesResult.data || [];
+const hayNotificaciones = notificaciones.length > 0;
+
+
+const citasHoy = dataCitas || [];
+const totalCitasHoy = citasHoy.length;
+const citasPendientes = citasHoy.filter(c => c.estado === 'pendiente');
+const cantidadPendientes = citasPendientes.length;
+
+let proximaHora = "--:--";
+let proximaNombre = "";
+let estadoAgenda = "vacio";
+
+if (cantidadPendientes > 0) {
+    const siguiente = citasPendientes[0];
+    estadoAgenda = "pendiente";
+    proximaNombre = siguiente.nombre || "Paciente";
+    
+    if (siguiente.fecha_hora) {
+        const dateObj = new Date(siguiente.fecha_hora);
+        proximaHora = dateObj.toLocaleTimeString('es-MX', { 
+            hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Merida'
+        });
+    }
+} else if (totalCitasHoy > 0) {
+    estadoAgenda = "completado";
+    proximaNombre = "Todas las citas finalizadas";
+}
+
+// --- MARCAR TODO COMO VISTO ---
+if (Astro.request.method === "POST") {
+    try {
+        const formData = await Astro.request.formData();
+        const action = formData.get("action");
+
+        if (action === "mark_all_read") {
+            // Actualizamos TODAS las notificaciones no vistas a true
+            const { error } = await supabase
+                .from('respuestas_cuestionarios')
+                .update({ visto: true })
+                .eq('visto', false);
+            
+            if (!error) {
+                // Recargamos para limpiar la UI
+                return Astro.redirect(Astro.url.href);
+            }
+        }
+    } catch (e) {
+        console.error("Error marcando notificaciones:", e);
+    }
+}
+
+const fechaHoyTexto = new Date().toLocaleDateString('es-MX', { 
+    timeZone: 'America/Merida',
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+});
+---
+
+<Layout title="Dashboard | Lab-Somno">
+    <main class="max-w-6xl mx-auto pt-10 pb-20 px-6">
+
+        <div class="relative mb-8 pb-4">
+            <div class="absolute -top-10 -left-10 w-64 h-64 bg-blue-600/10 rounded-full blur-[80px] pointer-events-none mix-blend-screen"></div>
+
+            <div class="relative z-10 flex flex-col md:flex-row justify-between items-end gap-6 mb-5">
+                
+                <div class="space-y-3">
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-widest w-fit backdrop-blur-sm">
+                        <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                        </span>
+                        Panel de Control
+                    </div>
+
+                    <h1 class="text-5xl md:text-6xl font-black text-white tracking-tight leading-tight">
+                        Hola, <br class="md:hidden" />
+                        <span class="relative inline-block">
+                            <span class="absolute inset-0 bg-gradient-to-r from-blue-600 to-emerald-500 blur-xl opacity-30 select-none" aria-hidden="true">{nombreUsuario}</span>
+                            <span class="relative text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-emerald-400 to-teal-400 filter drop-shadow-sm">
+                                {nombreUsuario}
+                            </span>
+                        </span>
+                    </h1>
+
+                    <p class="text-gray-400 text-lg font-light max-w-lg leading-relaxed">
+                        Que bueno tenerte de vuelta. ¿Qué quieres hacer hoy?
+                    </p>
+
+                    <button 
+                        onclick="document.cookie='user_session=;path=/;max-age=0';window.location.href='/'"
+                        class="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 text-gray-400 hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-400 rounded-xl transition-all duration-300 text-sm font-bold group"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:-translate-x-1 transition-transform">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                        </svg>
+                        Cambiar Usuario
+                    </button>
+                </div>
+
+                
+
+                <div class="hidden md:flex flex-col items-end gap-4 text-right">
+                    
+                    <div class="flex items-center gap-4">
+                        <div class="relative group z-50">
+                            <button class="relative p-3 text-gray-400 hover:text-white transition-colors rounded-full bg-gray-900/50 border border-gray-800 hover:bg-gray-800 hover:border-gray-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
+                                </svg>
+                                {hayNotificaciones && (
+                                    <span class="absolute top-2 right-2.5 flex h-2.5 w-2.5">
+                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                    </span>
+                                )}
+                            </button>
+
+                            <div class="absolute right-0 mt-2 w-80 bg-[#0f172a] border border-gray-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 origin-top-right transform">
+                                
+                                <div class="p-3 border-b border-gray-700/50 flex justify-between items-center">
+                                    <div class="flex items-center gap-2">
+                                        <h4 class="text-sm font-bold text-white">Actividad</h4>
+                                        {hayNotificaciones && <span class="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full">{notificaciones.length}</span>}
+                                    </div>
+
+                                    {hayNotificaciones && (
+                                        <form method="POST">
+                                            <input type="hidden" name="action" value="mark_all_read" />
+                                            <button type="submit" class="text-[10px] font-bold text-blue-400 hover:text-white transition-colors uppercase tracking-wider cursor-pointer">
+                                                Marcar todo como visto
+                                            </button>
+                                        </form>
+                                    )}
+                                </div>
+                                <div class="max-h-64 overflow-y-auto py-1 custom-scrollbar text-left">
+                                    {hayNotificaciones ? (
+                                        notificaciones.map((notif: any) => (
+                                            <a 
+                                                href={`/paciente/${notif.pacientes?.tipo_paciente || 'sueno'}/${notif.pacientes?.id}?marcar_leido=${notif.id}#evaluacion`}
+                                                class="block px-4 py-3 hover:bg-white/5 border-b border-gray-800/50 last:border-0 transition-colors"
+                                            >
+                                                <div class="flex justify-between items-start mb-1">
+                                                    <span class="text-sm font-bold text-blue-300 capitalize">{notif.pacientes?.nombre || 'Paciente'}</span>
+                                                    <span class="text-[10px] text-gray-500">{new Date(notif.updated_at).toLocaleDateString('es-MX', {day: '2-digit', month:'short'})}</span>
+                                                </div>
+                                                <p class="text-xs text-gray-300">
+                                                    Respondió: <span class="font-mono text-purple-300 uppercase">{notif.cuestionario}</span>
+                                                </p>
+                                            </a>
+                                        ))
+                                    ) : (
+                                        <div class="px-4 py-6 text-center text-gray-500 text-xs italic">
+                                            No hay nuevas respuestas.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="group flex items-center gap-4 px-5 py-4 rounded-2xl bg-gray-900/40 border border-gray-800 backdrop-blur-md hover:border-gray-700 hover:bg-gray-800/40 transition-all duration-300 shadow-lg shadow-black/20">
+                        <div class="bg-gray-800 p-2.5 rounded-xl group-hover:bg-blue-600/20 group-hover:text-blue-400 transition-colors text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-xs text-gray-500 font-bold uppercase tracking-wider mb-0.5">Fecha Actual</p>
+                            <p class="text-base font-semibold text-gray-200 capitalize">{fechaHoyTexto}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-gray-800 to-transparent mt-8"></div>
+        </div>
+
+        <div class="mb-10 animate-fade-in-up">
+            {totalCitasHoy > 0 ? (
+                // CASO A: HAY CITAS HOY (Pendientes o Terminadas)
+                <div class={`relative overflow-hidden rounded-2xl border p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-lg transition-all duration-500 ${
+                    estadoAgenda === 'completado' 
+                        ? 'bg-gradient-to-r from-emerald-900/40 to-teal-900/40 border-emerald-500/30 shadow-emerald-900/10' 
+                        : 'bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border-blue-500/30 shadow-blue-900/10'
+                }`}>
+                    
+                    <div class={`absolute top-0 left-0 w-full h-full pattern-grid-lg pointer-events-none ${
+                        estadoAgenda === 'completado' ? 'bg-emerald-500/5' : 'bg-blue-500/5'
+                    }`}></div>
+                    <div class={`absolute -left-4 -top-4 w-24 h-24 rounded-full blur-2xl ${
+                        estadoAgenda === 'completado' ? 'bg-emerald-500/20' : 'bg-blue-500/20'
+                    }`}></div>
+
+                    <div class="relative z-10 flex items-center gap-5">
+                        <div class="relative">
+                            <div class={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg transition-colors ${
+                                estadoAgenda === 'completado' ? 'bg-emerald-600 shadow-emerald-600/40' : 'bg-blue-600 shadow-blue-600/40'
+                            }`}>
+                                <span class="text-3xl font-extrabold text-white">
+                                    {estadoAgenda === 'completado' ? '✓' : cantidadPendientes}
+                                </span>
+                            </div>
+                            {estadoAgenda === 'pendiente' && (
+                                <div class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 border-2 border-gray-900 rounded-full animate-pulse"></div>
+                            )}
+                        </div>
+                        
+                        <div>
+                            <h3 class="text-xl font-bold text-white mb-1">Agenda de Hoy</h3>
+                            <p class={`text-sm ${estadoAgenda === 'completado' ? 'text-emerald-200' : 'text-blue-200'}`}>
+                                {estadoAgenda === 'completado' 
+                                    ? `¡Excelente trabajo! Has atendido a tus ${totalCitasHoy} pacientes.` 
+                                    : cantidadPendientes === 1 
+                                        ? `Te queda 1 paciente esperando atención.` 
+                                        : `Te quedan ${cantidadPendientes} pacientes por atender hoy.`
+                                }
+                            </p>
+                            
+                            <div class={`mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-lg border text-xs transition-colors ${
+                                estadoAgenda === 'completado' 
+                                    ? 'bg-emerald-950/50 border-emerald-800 text-emerald-300'
+                                    : 'bg-blue-950/50 border-blue-800 text-blue-300'
+                            }`}>
+                                {estadoAgenda === 'completado' ? (
+                                    <>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                        Agenda Completada
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        Siguiente: <span class="font-bold text-white">{proximaHora}</span> - {proximaNombre}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="relative z-10 w-full md:w-auto">
+                        <a href="/citas" class={`flex items-center justify-center gap-2 w-full md:w-auto px-6 py-3 text-white font-bold rounded-xl transition-all shadow-lg group ${
+                            estadoAgenda === 'completado' 
+                                ? 'bg-emerald-600 hover:bg-emerald-500 hover:shadow-emerald-500/25' 
+                                : 'bg-blue-600 hover:bg-blue-500 hover:shadow-blue-500/25'
+                        }`}>
+                            Ver Agenda
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+            ) : (
+                // CASO B: NO HAY CITAS (Día Libre)
+                <div class="relative overflow-hidden rounded-2xl bg-gray-800/40 border border-gray-700/50 p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div class="flex items-center gap-5">
+                        <div class="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">Todo al día</h3>
+                            <p class="text-gray-400 text-sm">No hay citas programadas para hoy, {fechaHoyTexto}.</p>
+                        </div>
+                    </div>
+                    
+                    <a href="/nueva-cita" class="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm font-medium rounded-lg transition-colors border border-gray-600">
+                        Agendar Cita
+                    </a>
+                </div>
+            )}
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[180px]">
+
+            <a href="/citas" class="group relative md:col-span-2 bg-gradient-to-br from-slate-900 to-slate-950 border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-900/20 hover:scale-[1.01]">
+                <div class="absolute top-0 right-0 w-64 h-64 bg-purple-600/20 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-purple-600/30"></div>
+                
+                <div class="relative z-10 h-full flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div class="p-3 bg-purple-500/20 rounded-2xl text-purple-300 group-hover:text-white group-hover:bg-purple-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5m-9-6h.008v.008H12v-.008ZM12 15h.008v.008H12V15Zm0 2.25h.008v.008H12v-.008ZM9.75 15h.008v.008H9.75V15Zm0 2.25h.008v.008H9.75v-.008ZM7.5 15h.008v.008H7.5V15Zm0 2.25h.008v.008H7.5v-.008Zm6.75-4.5h.008v.008h-.008v-.008Zm0 2.25h.008v.008h-.008V15Zm0 2.25h.008v.008h-.008v-.008Zm2.25-4.5h.008v.008H16.5v-.008Zm0 2.25h.008v.008H16.5V15Z" /></svg>
+                        </div>
+                        <span class="px-3 py-1 bg-white/5 rounded-full text-xs font-medium text-gray-400 border border-white/5 group-hover:border-purple-500/30 transition-colors">Gestión de Citas</span>
+                    </div>
+                    <div>
+                        <h3 class="text-3xl font-bold text-white mb-1 group-hover:translate-x-1 transition-transform">Agenda</h3>
+                        <p class="text-gray-400 group-hover:text-purple-200 transition-colors">Visualizar calendario y citas pendientes</p>
+                    </div>
+                </div>
+            </a>
+
+            <a href="/lista" class="group relative md:row-span-2 bg-gradient-to-br from-slate-900 to-slate-950 border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-blue-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-blue-900/20 hover:scale-[1.01]">
+                <div class="absolute bottom-0 left-0 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl -ml-16 -mb-16 transition-all group-hover:bg-blue-600/20"></div>
+                
+                <div class="relative z-10 h-full flex flex-col justify-between">
+                    <div class="p-3 w-fit bg-blue-500/20 rounded-2xl text-blue-300 group-hover:text-white group-hover:bg-blue-500 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>
+                    </div>
+                    
+                    <div class="mt-10">
+                        <h3 class="text-3xl font-bold text-white mb-2 group-hover:translate-x-1 transition-transform">Pacientes</h3>
+                        <p class="text-gray-400 text-sm leading-relaxed mb-4 group-hover:text-blue-200 transition-colors">
+                            Acceso directo a la base de datos completa de pacientes y expedientes clínicos.
+                        </p>
+                        <div class="flex items-center gap-2 text-blue-400 text-sm font-bold uppercase tracking-wider group-hover:text-blue-300">
+                            Ver lista <span class="group-hover:translate-x-1 transition-transform">→</span>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <button onclick="document.getElementById('modal-tipo-paciente').showModal()" class="w-full text-left group relative bg-gradient-to-br from-slate-900 to-slate-950 border border-white/10 rounded-3xl p-6 overflow-hidden hover:border-emerald-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-900/20 hover:scale-[1.01] cursor-pointer">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl -mr-8 -mt-8 transition-all group-hover:bg-emerald-500/20"></div>
+                <div class="relative z-10 h-full flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div class="p-2.5 bg-emerald-500/20 rounded-xl text-emerald-300 group-hover:text-white group-hover:bg-emerald-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-1.409-4.22a-2.25 2.25 0 0 1 3.423 3.42 2.25 2.25 0 0 1-3.423-3.42ZM6.75 2.25a.75.75 0 0 1 .75.75v.75h3a.75.75 0 0 1 0 1.5h-3v.75a.75.75 0 0 1-1.5 0v-.75H3a.75.75 0 0 1 0-1.5h3V3a.75.75 0 0 1 .75-.75Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-white group-hover:text-emerald-200 transition-colors">Nuevo Paciente</h3>
+                        <p class="text-xs text-gray-400 mt-1">Registrar ingreso</p>
+                    </div>
+                </div>
+            </button>
+
+            <a href="/nueva-cita" class="group relative bg-gradient-to-br from-slate-900 to-slate-950 border border-white/10 rounded-3xl p-6 overflow-hidden hover:border-pink-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-pink-900/20 hover:scale-[1.01]">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-pink-500/10 rounded-full blur-2xl -mr-8 -mt-8 transition-all group-hover:bg-pink-500/20"></div>
+                
+                <div class="relative z-10 h-full flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div class="p-2.5 bg-pink-500/20 rounded-xl text-pink-300 group-hover:text-white group-hover:bg-pink-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-white group-hover:text-pink-200 transition-colors">Agendar Cita</h3>
+                        <p class="text-xs text-gray-400 mt-1">Crear nueva cita</p>
+                    </div>
+                </div>
+            </a>
+
+            <a href="/feedback" class="group relative md:row-span-2 bg-gradient-to-br from-slate-900 to-slate-950 border border-white/10 rounded-3xl p-6 overflow-hidden hover:border-amber-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-amber-900/20 hover:scale-[1.01]">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl -mr-8 -mt-8 transition-all group-hover:bg-amber-500/20"></div>
+                
+                <div class="relative z-10 h-full flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div class="p-2.5 bg-amber-500/20 rounded-xl text-amber-300 group-hover:text-white group-hover:bg-amber-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 28 28" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                <path d="m10 10c0 1.105-.895 2-2 2-1.104 0-2-.896-2-2s.895-2 2-2c.552 0 1.052.224 1.414.586.361.351.586.841.586 1.384v.032zm6 0c0 1.105-.895 2-2 2-.552 0-1.052-.224-1.414-.586-.377-.364-.611-.874-.611-1.439 0-1.105.895-2 2-2 .565 0 1.074.234 1.438.61l.001.001c.362.351.587.841.587 1.385v.031-.002zm6 0c0 1.104-.896 2-2 2s-2-.895-2-2 .895-2 2-2c.552 0 1.052.224 1.414.586.361.351.586.841.586 1.384v.032zm-8-8c-.038 0-.083-.001-.128-.001-2.098 0-4.102.399-5.942 1.124l.11-.038c-1.74.644-3.217 1.645-4.4 2.922l-.007.007c-.99 1.036-1.608 2.436-1.633 3.98v.005c.013 1.258.432 2.415 1.131 3.351l-.011-.015c.835 1.131 1.885 2.053 3.096 2.719l.049.025 1.36.782-.426 1.498c-.272 1.021-.646 1.915-1.122 2.741l.029-.054c1.651-.691 3.071-1.59 4.313-2.686l-.017.014.672-.594.89.094c.607.077 1.312.122 2.028.125h.004c.038 0 .083.001.128.001 2.098 0 4.102-.399 5.942-1.124l-.11.038c1.74-.644 3.217-1.645 4.4-2.922l.007-.007c1.009-1.025 1.632-2.432 1.632-3.984s-.623-2.96-1.633-3.985l.001.001c-1.19-1.284-2.666-2.286-4.329-2.904l-.078-.025c-1.73-.687-3.735-1.086-5.833-1.086-.044 0-.088 0-.132.001h.007zm14 8c-.012 1.924-.72 3.681-1.884 5.033l.009-.01c-1.349 1.592-3.059 2.837-5.008 3.611l-.086.03c-2.023.846-4.374 1.337-6.839 1.337-.068 0-.135 0-.202-.001h.01c-.8-.002-1.588-.047-2.363-.134l.097.009c-1.981 1.759-4.399 3.072-7.069 3.756l-.118.026c-.503.145-1.107.266-1.726.339l-.055.005h-.08c-.163 0-.311-.062-.422-.164-.123-.111-.212-.258-.249-.424l-.001-.005v-.016c-.017-.029-.027-.064-.027-.102 0-.033.008-.063.021-.091l-.001.001c.02-.047.031-.101.031-.159 0-.001 0-.001 0-.002q-.008-.031.07-.149l.094-.141.11-.133.125-.141q.11-.125.484-.539l.539-.594q.164-.18.484-.617c.174-.231.343-.493.491-.767l.017-.033q.187-.359.422-.922c.137-.317.276-.712.39-1.117l.017-.07c-1.558-.861-2.852-2.018-3.844-3.405l-.024-.035c-.878-1.216-1.407-2.735-1.414-4.377v-.002c.005-1.438.418-2.779 1.128-3.914l-.018.031c.781-1.276 1.778-2.34 2.951-3.173l.033-.022c1.281-.904 2.766-1.632 4.361-2.105l.108-.027c1.603-.501 3.446-.789 5.357-.789h.085-.004.083c1.911 0 3.754.288 5.488.824l-.132-.035c1.703.501 3.188 1.229 4.517 2.165l-.048-.032c1.206.855 2.203 1.92 2.958 3.149l.026.046c.691 1.104 1.103 2.445 1.107 3.882v.001z"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="mt-6">
+                        <h3 class="text-xl font-bold text-white mb-1 group-hover:text-amber-300 transition-colors">Feedback</h3>
+                        <p class="text-sm text-gray-400 font-medium group-hover:text-gray-300 transition-colors">Reporta errores, sugiere cambios o pide nuevas funciones.</p>
+                    </div>
+                </div>
+            </a>
+
+            <a href="/manuales" class="group relative md:col-span-2 bg-gradient-to-br from-slate-900 to-slate-950 border border-white/10 rounded-3xl p-6 overflow-hidden hover:border-cyan-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-900/20 hover:scale-[1.01]">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl -mr-8 -mt-8 transition-all group-hover:bg-cyan-500/20"></div>
+                
+                <div class="relative z-10 h-full flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div class="p-2.5 bg-cyan-500/20 rounded-xl text-cyan-300 group-hover:text-white group-hover:bg-cyan-500 transition-colors">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M10.9436 1.25H13.0564C14.8942 1.24998 16.3498 1.24997 17.489 1.40314C18.6614 1.56076 19.6104 1.89288 20.3588 2.64124C21.1071 3.38961 21.4392 4.33856 21.5969 5.51098C21.75 6.65019 21.75 8.10583 21.75 9.94359V14.0564C21.75 15.8942 21.75 17.3498 21.5969 18.489C21.4392 19.6614 21.1071 20.6104 20.3588 21.3588C19.6104 22.1071 18.6614 22.4392 17.489 22.5969C16.3498 22.75 14.8942 22.75 13.0564 22.75H10.9436C9.10583 22.75 7.65019 22.75 6.51098 22.5969C5.33856 22.4392 4.38961 22.1071 3.64124 21.3588C2.89288 20.6104 2.56076 19.6614 2.40314 18.489C2.24997 17.3498 2.24998 15.8942 2.25 14.0564V9.94358C2.24998 8.10582 2.24997 6.65019 2.40314 5.51098C2.56076 4.33856 2.89288 3.38961 3.64124 2.64124C4.38961 1.89288 5.33856 1.56076 6.51098 1.40314C7.65019 1.24997 9.10582 1.24998 10.9436 1.25ZM6.71085 2.88976C5.70476 3.02502 5.12511 3.27869 4.7019 3.7019C4.27869 4.12511 4.02502 4.70476 3.88976 5.71085C3.75159 6.73851 3.75 8.09318 3.75 10V14C3.75 15.9068 3.75159 17.2615 3.88976 18.2892C4.02502 19.2952 4.27869 19.8749 4.7019 20.2981C5.12511 20.7213 5.70476 20.975 6.71085 21.1102C7.73851 21.2484 9.09318 21.25 11 21.25H13C14.9068 21.25 16.2615 21.2484 17.2892 21.1102C18.2952 20.975 18.8749 20.7213 19.2981 20.2981C19.7213 19.8749 19.975 19.2952 20.1102 18.2892C20.2484 17.2615 20.25 15.9068 20.25 14V10C20.25 8.09318 20.2484 6.73851 20.1102 5.71085C19.975 4.70476 19.7213 4.12511 19.2981 3.7019C18.8749 3.27869 18.2952 3.02502 17.2892 2.88976C16.2615 2.75159 14.9068 2.75 13 2.75H11C9.09318 2.75 7.73851 2.75159 6.71085 2.88976ZM7.25 8C7.25 7.58579 7.58579 7.25 8 7.25H16C16.4142 7.25 16.75 7.58579 16.75 8C16.75 8.41421 16.4142 8.75 16 8.75H8C7.58579 8.75 7.25 8.41421 7.25 8ZM7.25 12C7.25 11.5858 7.58579 11.25 8 11.25H16C16.4142 11.25 16.75 11.5858 16.75 12C16.75 12.4142 16.4142 12.75 16 12.75H8C7.58579 12.75 7.25 12.4142 7.25 12ZM7.25 16C7.25 15.5858 7.58579 15.25 8 15.25H13C13.4142 15.25 13.75 15.5858 13.75 16C13.75 16.4142 13.4142 16.75 13 16.75H8C7.58579 16.75 7.25 16.4142 7.25 16Z"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="mt-6">
+                        <h3 class="text-xl font-bold text-white mb-1 group-hover:text-cyan-300 transition-colors">Manuales</h3>
+                        <p class="text-sm text-gray-400 font-medium group-hover:text-gray-300 transition-colors">Todos los manuales necesarios para el funcionamiento del laboratorio.</p>
+                    </div>
+                </div>
+            </a>
+
+            <a href="/reportes" class="group relative bg-gradient-to-br from-slate-900 to-slate-950 border border-white/10 rounded-3xl p-6 overflow-hidden hover:border-rose-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-rose-900/20 hover:scale-[1.01]">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl -mr-8 -mt-8 transition-all group-hover:bg-rose-500/20"></div>
+                
+                <div class="relative z-10 h-full flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div class="p-2.5 bg-rose-500/20 rounded-xl text-rose-300 group-hover:text-white group-hover:bg-rose-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                <path d="M18.18 8.03933L18.6435 7.57589C19.4113 6.80804 20.6563 6.80804 21.4241 7.57589C22.192 8.34374 22.192 9.58868 21.4241 10.3565L20.9607 10.82M18.18 8.03933C18.18 8.03933 18.238 9.02414 19.1069 9.89309C19.9759 10.762 20.9607 10.82 20.9607 10.82M18.18 8.03933L13.9194 12.2999C13.6308 12.5885 13.4865 12.7328 13.3624 12.8919C13.2161 13.0796 13.0906 13.2827 12.9882 13.4975C12.9014 13.6797 12.8368 13.8732 12.7078 14.2604L12.2946 15.5L12.1609 15.901M20.9607 10.82L16.7001 15.0806C16.4115 15.3692 16.2672 15.5135 16.1081 15.6376C15.9204 15.7839 15.7173 15.9094 15.5025 16.0118C15.3203 16.0986 15.1268 16.1632 14.7396 16.2922L13.5 16.7054L13.099 16.8391M13.099 16.8391L12.6979 16.9728C12.5074 17.0363 12.2973 16.9867 12.1553 16.8447C12.0133 16.7027 11.9637 16.4926 12.0272 16.3021L12.1609 15.901M13.099 16.8391L12.1609 15.901" stroke-width="1.5"/>
+                                <path d="M8 13H10.5" stroke-width="1.5" stroke-linecap="round"/>
+                                <path d="M8 9H14.5" stroke-width="1.5" stroke-linecap="round"/>
+                                <path d="M8 17H9.5" stroke-width="1.5" stroke-linecap="round"/>
+                                <path d="M3 14V10C3 6.22876 3 4.34315 4.17157 3.17157C5.34315 2 7.22876 2 11 2H13C16.7712 2 18.6569 2 19.8284 3.17157M21 14C21 17.7712 21 19.6569 19.8284 20.8284M4.17157 20.8284C5.34315 22 7.22876 22 11 22H13C16.7712 22 18.6569 22 19.8284 20.8284M19.8284 20.8284C20.7715 19.8853 20.9554 18.4796 20.9913 16" stroke-width="1.5" stroke-linecap="round"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="mt-8">
+                        <h3 class="text-xl font-bold text-white mb-1 group-hover:text-rose-300 transition-colors">Reportes</h3>
+                        <p class="text-sm text-gray-400 font-medium group-hover:text-gray-300 transition-colors">Generación de reportes del laboratorio</p>
+                    </div>
+                </div>
+            </a>
+
+            <a href="/estadisticas" class="group relative bg-gradient-to-br from-slate-900 to-slate-950 border border-white/10 rounded-3xl p-6 overflow-hidden hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-900/20 hover:scale-[1.01]">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl -mr-8 -mt-8 transition-all group-hover:bg-purple-500/20"></div>
+                
+                <div class="relative z-10 h-full flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div class="p-2.5 bg-purple-500/20 rounded-xl text-purple-300 group-hover:text-white group-hover:bg-purple-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="mt-8">
+                        <h3 class="text-xl font-bold text-white mb-1 group-hover:text-purple-300 transition-colors">Estadísticas</h3>
+                        <p class="text-sm text-gray-400 font-medium group-hover:text-gray-300 transition-colors">Métricas y reportes financieros</p>
+                    </div>
+                </div>
+            </a>
+
+        </div>
+
+    </main>
+    <SystemUpdates />
+    <PatientTypeModal />
+</Layout>
+
+<style>
+    @keyframes scroll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+    }
+    .animate-infinite-scroll {
+        animation: scroll 20s linear infinite;
+    }
+    /* Pausar al pasar el mouse para ver detalles */
+    .animate-infinite-scroll:hover {
+        animation-play-state: paused;
+    }
+</style>

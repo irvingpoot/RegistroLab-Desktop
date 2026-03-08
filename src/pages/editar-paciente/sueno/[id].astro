@@ -1,0 +1,656 @@
+---
+
+/**
+ * @file [id].astro
+ * @description Formulario maestro para la edición del expediente clínico.
+ * * ESTRATEGIA DE ACTUALIZACIÓN (Relaciones 1:N):
+ * - Para las listas dinámicas (Síntomas y Puntajes Extra), se utiliza una estrategia
+ * de "Borrado Total y Reinserción" (Flush & Fill) en cada guardado.
+ * Esto garantiza que los elementos eliminados visualmente por el usuario desaparezcan
+ * realmente de la base de datos sin necesidad de lógica compleja de comparación.
+ * * LÓGICA DE NEGOCIO:
+ * - Recálculo automático de `edad`: Se actualiza en el servidor basado en la fecha de nacimiento.
+ * - Formularios Dinámicos: Utiliza JavaScript (cliente) para clonar templates HTML
+ * y permitir agregar 'N' cantidad de síntomas o puntajes.
+ * * CARGA DE DATOS:
+ * - Ejecuta 3 consultas en paralelo (`Promise.all`) para reconstruir el estado completo
+ * del paciente antes de renderizar.
+ */
+
+
+import Layout from "../../../layouts/Layout.astro"
+import ReturnButton from "../../../components/ReturnButton.astro"
+import SintomaGroup from "../../../components/SintomaGroup.astro"
+import PuntajeExtraGroup from "../../../components/PuntajeExtraGroup.astro"
+import { createClient } from "@supabase/supabase-js"
+
+const { id } = Astro.params;
+if (!id) return Astro.redirect("/lista");
+
+const supabase = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.SUPABASE_KEY
+);
+
+// --- LÓGICA DE ACTUALIZACIÓN ---
+let mensaje = "";
+let error = false;
+
+if (Astro.request.method === "POST") {
+    try {
+        const data = await Astro.request.formData();
+        
+        const getInt = (key: string) => {
+            const val = data.get(key);
+            return val && val.toString().trim() !== '' ? parseInt(val as string) : null;
+        };
+
+        // 1. Calcular Edad (igual que en registro)
+        let edadCalculada = 0;
+        const fechaNacString = data.get("fecha_nacimiento") as string;
+        if (fechaNacString) {
+            const hoy = new Date();
+            const cumple = new Date(fechaNacString);
+            let edad = hoy.getFullYear() - cumple.getFullYear();
+            const m = hoy.getMonth() - cumple.getMonth();
+            if (m < 0 || (m === 0 && hoy.getDate() < cumple.getDate())) { edad--; }
+            edadCalculada = edad;
+        }
+
+        const pacienteUpdate = {
+            nombre: data.get("nombre"),
+            telefono: data.get("telefono"),
+            edad: edadCalculada,
+            fecha_nacimiento: fechaNacString || null,
+            genero: data.get("genero"),
+            ocupacion: data.get("ocupacion"),
+            escolaridad: data.get("escolaridad"),
+            referencia: data.get("referencia"),
+            motivo: data.get("motivo"),
+            
+            lateralidad: data.get("lateralidad"),
+            peso: data.get("peso") ? parseFloat(data.get("peso") as string) : null,
+            altura: data.get("altura") ? parseFloat(data.get("altura") as string) : null,
+
+            donde_duerme: data.get("donde_duerme"),
+            hora_acostarse: data.get("hora_acostarse"), 
+            hora_dormir: data.get("hora_dormir"),
+            hora_despertar: data.get("hora_despertar"),
+            hora_levantarse: data.get("hora_levantarse"),
+            despierta_noche: data.get("despierta_noche"),
+            que_despierta: data.get("que_despierta"),
+            somnolencia: data.get("somnolencia"),
+            siesta: data.get("siesta"),
+            dias_siesta: getInt("dias_siesta"),
+            tiempo_siesta: data.get("tiempo_siesta"),
+            ejercicio: data.get("ejercicio"),
+            horas_ejercicio: data.get("horas_ejercicio"),
+
+            fuma: data.get("fuma"),
+            cigarros_semana: getInt("cigarros_semana"),
+            alcohol: data.get("alcohol"),
+            cervezas_semana: getInt("cervezas_semana"),
+            cafe: data.get("cafe"),
+            tazas_cafe_semana: getInt("tazas_cafe_semana"),
+            te: data.get("te"),
+            tazas_te_semana: getInt("tazas_te_semana"),
+
+            antecedentes: data.get("antecedentes"),
+            
+            sintoma: data.getAll('sintoma')[0]?.toString(),
+            temporalidad: data.getAll('temporalidad')[0]?.toString(),
+            frecuencia: data.getAll('frecuencia')[0]?.toString(),
+            gravedad: data.getAll('gravedad')[0]?.toString(),
+
+            alteracion_sueno: data.getAll("alteracion_sueno"),
+
+            epworth_pre: getInt("epworth_pre"), epworth_inter: getInt("epworth_inter"), epworth_post: getInt("epworth_post"),
+            dbi_pre: getInt("dbi_pre"), dbi_inter: getInt("dbi_inter"), dbi_post: getInt("dbi_post"),
+            hamilton_d_pre: getInt("hamilton_d_pre"), hamilton_d_inter: getInt("hamilton_d_inter"), hamilton_d_post: getInt("hamilton_d_post"),
+            hamilton_a_pre: getInt("hamilton_a_pre"), hamilton_a_inter: getInt("hamilton_a_inter"), hamilton_a_post: getInt("hamilton_a_post"),
+            isi_pre: getInt("isi_pre"), isi_inter: getInt("isi_inter"), isi_post: getInt("isi_post"),
+            psqi_pre: getInt("psqi_pre"), psqi_inter: getInt("psqi_inter"), psqi_post: getInt("psqi_post"),
+            stop_bang_pre: getInt("stop_bang_pre"), stop_bang_inter: getInt("stop_bang_inter"), stop_bang_post: getInt("stop_bang_post"),
+            berlin_pre: getInt("berlin_pre"), berlin_inter: getInt("berlin_inter"), berlin_post: getInt("berlin_post"),
+            cuestionario_insomnio_pre: getInt("cuestionario_insomnio_pre"), cuestionario_insomnio_inter: getInt("cuestionario_insomnio_inter"), cuestionario_insomnio_post: getInt("cuestionario_insomnio_post"),
+        };
+
+        // 2. Actualizar Tabla Principal
+        const { error: updateError } = await supabase
+            .from('pacientes')
+            .update(pacienteUpdate)
+            .eq('id', id);
+
+        if (updateError) throw updateError;
+
+        // 3. Actualizar Síntomas (Borrar todo y reinsertar)
+        await supabase.from('pacientes_sintomas').delete().eq('paciente_id', id);
+        
+        const sintomas = data.getAll('sintoma');
+        const temporalidades = data.getAll('temporalidad');
+        const frecuencias = data.getAll('frecuencia');
+        const gravedades = data.getAll('gravedad');
+
+        const sintomasInsert = sintomas.map((s, i) => ({
+            paciente_id: id,
+            sintoma: s.toString(),
+            temporalidad: temporalidades[i]?.toString(),
+            frecuencia: frecuencias[i]?.toString(),
+            gravedad: gravedades[i]?.toString()
+        })).filter(s => s.sintoma.trim() !== '');
+
+        if (sintomasInsert.length > 0) {
+            await supabase.from('pacientes_sintomas').insert(sintomasInsert);
+        }
+
+        // 4. Actualizar Puntajes Extra (Borrar y reinsertar)
+        await supabase.from('pacientes_puntajes_extra').delete().eq('paciente_id', id);
+
+        const extraNombres = data.getAll('extra_prueba_nombre');
+        const extraValores = data.getAll('extra_prueba_valor');
+        
+        const extrasInsert = extraNombres.map((n, i) => ({
+            paciente_id: id,
+            nombre_prueba: n.toString(),
+            puntaje: extraValores[i] ? parseInt(extraValores[i].toString()) : null
+        })).filter(e => e.nombre_prueba.trim() !== '');
+
+        if (extrasInsert.length > 0) {
+            await supabase.from('pacientes_puntajes_extra').insert(extrasInsert);
+        }
+
+        return Astro.redirect(`/paciente/sueno/${id}`);
+
+    } catch (e) {
+        console.error(e);
+        error = true;
+        mensaje = e instanceof Error ? e.message : "Error al actualizar";
+    }
+}
+
+// --- CARGA DE DATOS ---
+const { data: p, error: loadError } = await supabase
+    .from('pacientes')
+    .select('*, pacientes_sintomas(*), pacientes_puntajes_extra(*)')
+    .eq('id', id)
+    .single();
+
+if (loadError || !p) return Astro.redirect("/lista");
+
+// Asegurar al menos un elemento en arrays para renderizar
+const listaSintomas = p.pacientes_sintomas && p.pacientes_sintomas.length > 0 ? p.pacientes_sintomas : [{}];
+const listaExtras = p.pacientes_puntajes_extra || [];
+---
+
+<Layout title={`Editar: ${p.nombre}`}>
+    <ReturnButton href={`/paciente/sueno/${id}`} text="Cancelar y Volver" />
+
+    {error && (
+        <div class="fixed top-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg text-white shadow-lg bg-red-600 z-50">{mensaje}</div>
+    )}
+
+    <main class="max-w-7xl mx-auto pt-6 md:pt-10 pb-28 px-4">
+        <div class="flex flex-col items-center justify-center mb-8">
+            <h1 class="text-3xl md:text-5xl font-extrabold text-center">Editar Expediente</h1>
+            <p class="text-blue-400 mt-2 font-bold">{p.nombre}</p>
+        </div>
+
+        <form method="POST">
+            <div class="flex flex-col items-center justify-center space-y-12">
+                
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">SocioDemográficos</h2>
+                    <div class="flex flex-col space-y-4">
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col">
+                                <label class="label">Nombre completo:</label>
+                                <input type="text" name="nombre" value={p.nombre} required class="input">
+                            </div>
+                            
+                            <div class="flex grow flex-col md:w-1/3">
+                                <label class="label">Teléfono:</label>
+                                <input 
+                                    type="tel" 
+                                    name="telefono" 
+                                    value={p.telefono} 
+                                    placeholder="Ej. 999 123 4567" 
+                                    class="input"
+                                >
+                            </div>
+                        </div>
+                        
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col md:w-1/2"> 
+                                <label class="label">Fecha de Nacimiento:</label>
+                                <input type="date" name="fecha_nacimiento" value={p.fecha_nacimiento} required class="input" style="color-scheme: dark;">
+                            </div>
+                            <div class="flex grow flex-col md:w-1/2"> 
+                                <label class="label">Género:</label>
+                                <select name="genero" class="input appearance-none">
+                                    <option class="bg-gray-900" value="masculino" selected={p.genero === 'masculino'}>Masculino</option>
+                                    <option class="bg-gray-900" value="femenino" selected={p.genero === 'femenino'}>Femenino</option>
+                                    <option class="bg-gray-900" value="otro" selected={p.genero === 'otro'}>Otro</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col">
+                                <label class="label">Ocupación:</label>
+                                <input type="text" name="ocupacion" value={p.ocupacion} class="input">
+                            </div>
+                            <div class="flex grow flex-col">
+                                <label class="label">Escolaridad:</label>
+                                <select name="escolaridad" class="input appearance-none">
+                                    {["Primaria", "Secundaria", "Preparatoria", "Licenciatura", "Maestría", "Doctorado"].map(opt => (
+                                        <option class="bg-gray-900" value={opt} selected={p.escolaridad === opt}>{opt}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                            <div class="flex grow flex-col gap-2">
+                                <label class="text-sm font-medium text-gray-300">
+                                    Referencia (Referido por)
+                                </label>
+                                <div class="relative">
+                                    <select 
+                                        name="referencia" 
+                                        required
+                                        class="w-full bg-gray-900/50 border border-gray-600 text-white p-3 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none appearance-none transition-all cursor-pointer"
+                                    >
+                                        <option value="" disabled>Selecciona una opción</option>
+                                        
+                                        <option value="Servicio Medico" selected={p.referencia === 'Servicio Medico'}>
+                                            Servicio Médico
+                                        </option>
+                                        
+                                        <option value="Privado" selected={p.referencia === 'Privado'}>
+                                            Privado
+                                        </option>
+                                    </select>
+
+                                    <div class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-gray-400">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">Antropométricos</h2>
+                    <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                        <div class="flex grow flex-col md:w-1/2">
+                            <label class="label">Lateralidad:</label>
+                            <select name="lateralidad" class="input appearance-none">
+                                <option class="bg-gray-900" value="diestro" selected={p.lateralidad === 'diestro'}>Diestro</option>
+                                <option class="bg-gray-900" value="zurdo" selected={p.lateralidad === 'zurdo'}>Zurdo</option>
+                                <option class="bg-gray-900" value="ambidiestro" selected={p.lateralidad === 'ambidiestro'}>Ambidiestro</option>
+                            </select>
+                        </div>
+                        <div class="flex grow flex-col md:w-1/2">
+                            <label class="label">Peso (kg):</label>
+                            <input type="number" name="peso" step="0.1" value={p.peso} class="input">
+                        </div>
+                        <div class="flex grow flex-col md:w-1/2">
+                            <label class="label">Altura (m):</label>
+                            <input type="number" name="altura" step="0.01" value={p.altura} class="input">
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">Motivo de Consulta</h2>
+                    <textarea 
+                        name="motivo" 
+                        required 
+                        rows="4" 
+                        class="input resize-y"
+                    >{p.motivo}</textarea>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">Análisis de síntomas</h2>
+                    <div id="lista-sintomas" class="space-y-8">
+                        {listaSintomas.map((s:any, idx:any) => (
+                            <SintomaGroup numero={idx + 1} data={s} />
+                        ))}
+                    </div>
+                    <div class="mt-4 flex justify-end">
+                        <button type="button" id="btn-add-sintoma" class="flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-white border border-blue-500/30 hover:bg-blue-600/20 px-4 py-2 rounded-lg cursor-pointer">
+                            <span class="text-xl leading-none">+</span> Agregar otro síntoma
+                        </button>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">Diagnósticos previos</h2>
+                    <textarea name="antecedentes" rows="4" class="input resize-y">{p.antecedentes}</textarea>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">Hábitos y patrones</h2>
+                    <div class="flex flex-col space-y-6">
+                        <div class="flex flex-col">
+                            <label class="label mb-2">¿Dónde duerme?</label>
+                            <div class="flex flex-wrap gap-6 p-3 border border-gray-700 bg-gray-900/50 rounded-lg">
+                                {['cama', 'hamaca', 'ambas'].map(val => (
+                                    <label class="flex items-center gap-2 cursor-pointer hover:text-blue-400 transition">
+                                        <input type="radio" name="donde_duerme" value={val} checked={p.donde_duerme === val} class="accent-blue-500 w-4 h-4 uppercase"/> <span class="capitalize">{val}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div class="flex flex-col">
+                                <label class="text-xs text-gray-400 mb-1">Hora que se acuesta</label>
+                                <input type="time" name="hora_acostarse" value={p.hora_acostarse} class="p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white" style="color-scheme: dark;">
+                            </div>
+                            
+                            <div class="flex flex-col">
+                                <label class="text-xs text-gray-400 mb-1">Hora que se duerme</label>
+                                <input type="time" name="hora_dormir" value={p.hora_dormir} class="p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white" style="color-scheme: dark;">
+                            </div>
+
+                            <div class="flex flex-col">
+                                <label class="text-xs text-gray-400 mb-1">Hora que despierta</label>
+                                <input type="time" name="hora_despertar" value={p.hora_despertar} class="p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white" style="color-scheme: dark;">
+                            </div>
+
+                            <div class="flex flex-col">
+                                <label class="text-xs text-gray-400 mb-1">Hora que se levanta</label>
+                                <input type="time" name="hora_levantarse" value={p.hora_levantarse} class="p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white" style="color-scheme: dark;">
+                            </div>
+                        </div>
+
+                        <div class="cond-block">
+                            <label class="label">¿Se despierta por las noches?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2"><input type="radio" name="despierta_noche" value="si" checked={p.despierta_noche === 'si'} class="accent-blue-500 trigger-condicional" data-target="div_que_despierta"> Sí</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="despierta_noche" value="no" checked={p.despierta_noche !== 'si'} class="accent-blue-500 trigger-condicional" data-target="div_que_despierta"> No</label>
+                            </div>
+                            <div id="div_que_despierta" class={p.despierta_noche === 'si' ? "mt-3" : "hidden mt-3"}>
+                                <label class="sub-label">¿Qué lo despierta?</label>
+                                <input type="text" name="que_despierta" value={p.que_despierta} class="input-sub">
+                            </div>
+                        </div>
+
+                        <div class="cond-block">
+                            <label class="label">¿Padece somnolencia?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2"><input type="radio" name="somnolencia" value="si" checked={p.somnolencia === 'si'} class="accent-blue-500"> Sí</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="somnolencia" value="no" checked={p.somnolencia !== 'si'} class="accent-blue-500"> No</label>
+                            </div>
+                        </div>
+
+                        <div class="cond-block">
+                            <label class="label">¿Toma siestas?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2"><input type="radio" name="siesta" value="si" checked={p.siesta === 'si'} class="accent-blue-500 trigger-condicional" data-target="div_datos_siesta"> Sí</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="siesta" value="no" checked={p.siesta !== 'si'} class="accent-blue-500 trigger-condicional" data-target="div_datos_siesta"> No</label>
+                            </div>
+                            <div id="div_datos_siesta" class={p.siesta === 'si' ? "grid grid-cols-2 gap-4 mt-3" : "hidden grid grid-cols-2 gap-4 mt-3"}>
+                                <div><label class="sub-label">Días/semana</label><input type="number" name="dias_siesta" value={p.dias_siesta} class="input-sub"></div>
+                                <div><label class="sub-label">Duración</label><input type="text" name="tiempo_siesta" value={p.tiempo_siesta} class="input-sub"></div>
+                            </div>
+                        </div>
+
+                        <div class="cond-block">
+                            <label class="label">¿Realiza ejercicio?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2"><input type="radio" name="ejercicio" value="si" checked={p.ejercicio === 'si'} class="accent-blue-500 trigger-condicional" data-target="div_horas_ejercicio"> Sí</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="ejercicio" value="no" checked={p.ejercicio !== 'si'} class="accent-blue-500 trigger-condicional" data-target="div_horas_ejercicio"> No</label>
+                            </div>
+                            <div id="div_horas_ejercicio" class={p.ejercicio === 'si' ? "mt-3" : "hidden mt-3"}>
+                                <label class="sub-label">Horas/semana</label><input type="text" name="horas_ejercicio" value={p.horas_ejercicio} class="input-sub md:w-1/2">
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">Consumo de sustancias</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Fuma */}
+                        <div class="cond-block">
+                            <label class="label">¿Fuma?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2"><input type="radio" name="fuma" value="si" checked={p.fuma === 'si'} class="accent-blue-500 trigger-condicional" data-target="div_fuma"> Sí</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="fuma" value="no" checked={p.fuma !== 'si'} class="accent-blue-500 trigger-condicional" data-target="div_fuma"> No</label>
+                            </div>
+                            <div id="div_fuma" class={p.fuma === 'si' ? "mt-3" : "hidden mt-3"}><label class="sub-label">Cigarros/semana</label><input type="number" name="cigarros_semana" value={p.cigarros_semana} class="input-sub"></div>
+                        </div>
+                        <div class="cond-block">
+                            <label class="label">¿Alcohol?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2"><input type="radio" name="alcohol" value="si" checked={p.alcohol === 'si'} class="accent-blue-500 trigger-condicional" data-target="div_alcohol"> Sí</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="alcohol" value="no" checked={p.alcohol !== 'si'} class="accent-blue-500 trigger-condicional" data-target="div_alcohol"> No</label>
+                            </div>
+                            <div id="div_alcohol" class={p.alcohol === 'si' ? "mt-3" : "hidden mt-3"}><label class="sub-label">Cervezas/semana</label><input type="number" name="cervezas_semana" value={p.cervezas_semana} class="input-sub"></div>
+                        </div>
+                        <div class="cond-block">
+                            <label class="label">¿Café?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2"><input type="radio" name="cafe" value="si" checked={p.cafe === 'si'} class="accent-blue-500 trigger-condicional" data-target="div_cafe"> Sí</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="cafe" value="no" checked={p.cafe !== 'si'} class="accent-blue-500 trigger-condicional" data-target="div_cafe"> No</label>
+                            </div>
+                            <div id="div_cafe" class={p.cafe === 'si' ? "mt-3" : "hidden mt-3"}><label class="sub-label">Tazas/semana</label><input type="number" name="tazas_cafe_semana" value={p.tazas_cafe_semana} class="input-sub"></div>
+                        </div>
+                        <div class="cond-block">
+                            <label class="label">¿Té?</label>
+                            <div class="flex gap-6">
+                                <label class="flex items-center gap-2"><input type="radio" name="te" value="si" checked={p.te === 'si'} class="accent-blue-500 trigger-condicional" data-target="div_te"> Sí</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="te" value="no" checked={p.te !== 'si'} class="accent-blue-500 trigger-condicional" data-target="div_te"> No</label>
+                            </div>
+                            <div id="div_te" class={p.te === 'si' ? "mt-3" : "hidden mt-3"}><label class="sub-label">Tazas/semana</label><input type="number" name="tazas_te_semana" value={p.tazas_te_semana} class="input-sub"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">Alteraciones del sueño</h2>
+                    
+                    {/* Nota visual para el usuario */}
+                    <p class="text-xs text-blue-300 font-bold uppercase tracking-wider mb-3 px-1">
+                        * Puedes seleccionar múltiples opciones
+                    </p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20">
+                        {['insomnio', 'respiracion', 'ritmo_circadiano', 'movimiento', 'parasomnia', 'hipersomnia', 'medicas_psiquiatricas', 'sustancias'].map(val => (
+                            <label class="flex items-center gap-3 cursor-pointer hover:text-blue-400 p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                                <input 
+                                    type="checkbox" 
+                                    name="alteracion_sueno" 
+                                    value={val} 
+                                    checked={p.alteracion_sueno && Array.isArray(p.alteracion_sueno) && p.alteracion_sueno.includes(val)} 
+                                    class="accent-blue-500 w-5 h-5 rounded focus:ring-blue-500 cursor-pointer"
+                                />
+                                <span class="capitalize group-hover:translate-x-1 transition-transform">{val.replace('_', ' ')}</span>
+                            </label>
+                        ))}
+                    </div>
+                </section>
+
+                <section class="w-full max-w-4xl px-2 md:px-0">
+                    <h2 class="section-title">Puntajes</h2>
+                    <div class="overflow-x-auto mb-8">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="text-gray-400 text-xs uppercase border-b border-gray-700">
+                                    <th class="py-3 font-medium">Prueba / Escala</th>
+                                    <th class="py-3 font-medium text-center text-blue-400">Pre</th>
+                                    <th class="py-3 font-medium text-center text-purple-400">Inter</th>
+                                    <th class="py-3 font-medium text-center text-emerald-400">Post</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-sm divide-y divide-gray-800">
+                                {['epworth', 'dbi', 'hamilton_d', 'hamilton_a', 'isi', 'psqi', 'stop_bang', 'berlin', 'cuestionario_insomnio'].map((score) => (
+                                    <tr class="hover:bg-gray-800/30 transition-colors">
+                                        <td class="py-3 pr-4 font-medium text-gray-300 capitalize">
+                                            {score.replace(/_/g, ' ')}
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="number" name={`${score}_pre`} value={p[`${score}_pre`]} placeholder="-" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-center text-white focus:border-blue-500 focus:outline-none" />
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="number" name={`${score}_inter`} value={p[`${score}_inter`]} placeholder="-" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-center text-white focus:border-purple-500 focus:outline-none" />
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="number" name={`${score}_post`} value={p[`${score}_post`]} placeholder="-" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-center text-white focus:border-emerald-500 focus:outline-none" />
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="border-t border-gray-800 pt-6">
+                        <h3 class="text-lg font-medium text-gray-300 mb-4">Otros Puntajes</h3>
+                        <div id="lista-puntajes-extra" class="space-y-4">
+                            <PuntajeExtraGroup className="puntaje-extra-template hidden" />
+                            {listaExtras.map((extra: any) => (
+                                <PuntajeExtraGroup className="puntaje-extra-item" data={extra} />
+                            ))}
+                        </div>
+                        <div class="mt-4">
+                            <button type="button" id="btn-add-puntaje" class="flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-white border border-blue-500/30 hover:bg-blue-600/20 px-4 py-2 rounded-lg cursor-pointer">
+                                <span class="text-xl leading-none">+</span> Agregar otro puntaje
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="pt-10 pb-10">
+                    <button type="submit" class="w-full md:w-auto bg-blue-600 text-white text-lg font-semibold px-8 py-3 rounded-xl hover:bg-blue-500 cursor-pointer shadow-[0_0_20px_rgba(37,99,235,0.5)]">
+                        Guardar Cambios
+                    </button>
+                </div>
+            </div>
+        </form>
+    </main>
+</Layout>
+
+<style>
+    @reference "../../../styles/global.css";
+    .section-title { @apply text-2xl md:text-3xl pb-2 mb-6 border-b border-white/50 text-center text-gray-200 w-fit mx-auto px-10; }
+    .label { @apply text-lg font-medium text-gray-300; }
+    .sub-label { @apply text-sm font-medium text-blue-300 block mb-1; }
+    .input { @apply mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all w-full; }
+    .input-sub { @apply w-full p-2 border border-blue-500/30 bg-blue-900/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white; }
+    .cond-block { @apply flex flex-col space-y-2 p-4 border border-gray-700/50 rounded-xl bg-gray-800/20; }
+</style>
+
+<script>
+    function initEdit() {
+        // 1. Condicionales
+        const triggers = document.querySelectorAll('.trigger-condicional');
+        triggers.forEach(trigger => {
+            trigger.addEventListener('change', (e) => {
+                const target = e.target as HTMLInputElement; 
+                const targetId = target.dataset.target;
+                if (!targetId) return;
+                const targetDiv = document.getElementById(targetId);
+                if (targetDiv) {
+                    if (target.value === 'si') {
+                        targetDiv.classList.remove('hidden');
+                        targetDiv.querySelectorAll('input').forEach(i => i.removeAttribute('disabled'));
+                    } else {
+                        targetDiv.classList.add('hidden');
+                        targetDiv.querySelectorAll('input').forEach((i: HTMLInputElement) => {
+                            i.value = '';
+                            i.setAttribute('disabled', 'true');
+                        });
+                    }
+                }
+            });
+        });
+
+        // 2. Síntomas Dinámicos
+        const btnAddSintoma = document.getElementById('btn-add-sintoma');
+        const listaSintomas = document.getElementById('lista-sintomas');
+        
+        // Inicializar botones delete existentes
+        const initDeleteSintoma = (parent: Element) => {
+            const btn = parent.querySelector('.btn-delete-sintoma');
+            if (btn) {
+                btn.classList.remove('hidden');
+                btn.addEventListener('click', () => {
+                    if (document.querySelectorAll('.sintoma-group').length > 1) {
+                        parent.remove();
+                        // Renumerar
+                        document.querySelectorAll('.sintoma-group').forEach((el, i) => {
+                            const t = el.querySelector('.sintoma-titulo');
+                            if(t) t.textContent = `Síntoma ${i+1}`;
+                        });
+                    } else {
+                        alert("Debe haber al menos un síntoma.");
+                    }
+                });
+            }
+        };
+        // Aplicar a los cargados del servidor (menos el primero si es único)
+        const serverSintomas = document.querySelectorAll('.sintoma-group');
+        if (serverSintomas.length > 1) {
+            serverSintomas.forEach(initDeleteSintoma);
+        } else if (serverSintomas.length === 1) {
+            // Si solo hay uno, nos aseguramos que el botón esté oculto o listo para futuros clones
+            // (La lógica de clonación usará este como base)
+        }
+
+        if (btnAddSintoma && listaSintomas) {
+            btnAddSintoma.addEventListener('click', () => {
+                const original = listaSintomas.querySelector('.sintoma-group');
+                if (!original) return;
+                const clone = original.cloneNode(true) as HTMLElement;
+                clone.querySelectorAll('input').forEach((i: HTMLInputElement) => i.value = '');
+                
+                // Activar delete en el clon
+                initDeleteSintoma(clone);
+                // Si el original no tenía delete visible, el clon sí debe tenerlo
+                clone.querySelector('.btn-delete-sintoma')?.classList.remove('hidden');
+
+                // Asegurarse que el original (si era único) ahora tenga botón visible también
+                if (listaSintomas.querySelectorAll('.sintoma-group').length === 1) {
+                    initDeleteSintoma(original);
+                }
+
+                const total = listaSintomas.querySelectorAll('.sintoma-group').length + 1;
+                const tit = clone.querySelector('.sintoma-titulo');
+                if (tit) tit.textContent = `Síntoma ${total}`;
+                
+                listaSintomas.appendChild(clone);
+            });
+        }
+
+        // 3. Puntajes Extra
+        const btnAddPuntaje = document.getElementById('btn-add-puntaje');
+        const listaExtras = document.getElementById('lista-puntajes-extra');
+        const templateExtra = document.querySelector('.puntaje-extra-template');
+
+        const initDeleteExtra = (btn: Element) => {
+            btn.classList.remove('hidden');
+            btn.addEventListener('click', (e) => (e.target as HTMLElement).closest('.puntaje-extra-group')?.remove());
+        };
+
+        // Init existentes
+        document.querySelectorAll('.puntaje-extra-item .btn-delete-puntaje').forEach(initDeleteExtra);
+
+        if (btnAddPuntaje && listaExtras && templateExtra) {
+            btnAddPuntaje.addEventListener('click', () => {
+                const clone = templateExtra.cloneNode(true) as HTMLElement;
+                clone.classList.remove('hidden', 'puntaje-extra-template');
+                clone.classList.add('puntaje-extra-item');
+                clone.querySelectorAll('input').forEach((i: HTMLInputElement) => i.value = '');
+                
+                const btn = clone.querySelector('.btn-delete-puntaje');
+                if (btn) initDeleteExtra(btn);
+                
+                listaExtras.appendChild(clone);
+            });
+        }
+    }
+    document.addEventListener('DOMContentLoaded', initEdit);
+</script>

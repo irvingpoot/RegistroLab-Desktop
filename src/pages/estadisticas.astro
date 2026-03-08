@@ -1,0 +1,507 @@
+---
+
+/**
+ * @file estadisticas.astro
+ * @description Panel de Inteligencia de Negocios (BI) y métricas clínicas.
+ * * ESTRATEGIA DE DATOS:
+ * - Utiliza "Database Functions" (RPC) de Supabase en lugar de descargas directas.
+ * - Función SQL: `get_dashboard_stats()`.
+ * * SECCIONES:
+ * 1. KPIs Financieros (Ingresos, Tickets).
+ * 2. Métricas de Agenda (Pendientes vs Completadas).
+ * 3. Demografía y Procedencia (Gráficos de Dona).
+ * 4. Factores de Riesgo Clínico.
+ */
+
+import Layout from "../layouts/Layout.astro"
+import ReturnButton from "../components/ReturnButton.astro"
+import { createClient } from "@supabase/supabase-js"
+
+const supabase = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.SUPABASE_KEY
+);
+
+// --- 1. OBTENCIÓN DE DATOS ---
+// Llamamos a la función de base de datos que ya hizo todos los cálculos
+const { data, error } = await supabase.rpc('get_dashboard_stats');
+
+if (error) {
+    console.error("Error cargando stats RPC:", error);
+}
+
+// Valores por defecto COMPLETOS y ROBUSTOS
+// Esto evita que la página se rompa si la base de datos devuelve null o error
+const stats = data || {
+    // Contadores
+    totalPacientes: 0, pacientesEsteMes: 0, edadPromedio: 0,
+    // Finanzas
+    totalIngresos: 0, ingresosEsteMes: 0, ticketPromedio: 0,
+    // Factores Riesgo
+    fumadores: 0, bebedores: 0, obesidad: 0,
+    // Citas
+    totalCitas: 0, citasFuturas: 0, citasEsteMes: 0,
+    citasPendientes: 0, citasCompletadas: 0, citasCanceladas: 0,
+    // Demografía
+    hombres: 0, mujeres: 0,
+    // Referencias
+    privados: 0, servicioMedico: 0,
+    // Arrays (Listas) - Importante inicializarlos como [] vacío
+    topDiagnosticos: [],
+    topMotivos: [],   
+    procedencia: [],
+    topPersonal: [],
+    duermeCama: 0,
+    duermeHamaca: 0
+};
+
+
+
+// --- 2. CÁLCULOS DE PORCENTAJES (VISUALES) ---
+
+// A. Demografía
+const otrosGenero = stats.totalPacientes - (stats.hombres + stats.mujeres);
+const porcHombre = stats.totalPacientes ? Math.round((stats.hombres / stats.totalPacientes) * 100) : 0;
+const porcMujer = stats.totalPacientes ? Math.round((stats.mujeres / stats.totalPacientes) * 100) : 0;
+
+// B. Procedencia
+const otrosRef = stats.totalPacientes - (stats.privados + stats.servicioMedico);
+const totalRef = stats.totalPacientes || 1; 
+const pctPriv = (stats.privados / totalRef) * 100;
+const pctServ = (stats.servicioMedico / totalRef) * 100;
+const pctOtros = (otrosRef / totalRef) * 100;
+
+const offServ = -pctPriv; 
+const offOtros = -(pctPriv + pctServ);
+
+// C. Estado de Citas
+const totalGraficoCitas = stats.totalCitas || 1;
+const pctComp = (stats.citasCompletadas / totalGraficoCitas) * 100;
+const pctPend = (stats.citasPendientes / totalGraficoCitas) * 100;
+const pctCanc = (stats.citasCanceladas / totalGraficoCitas) * 100;
+
+const offPendCita = -pctComp;
+const offCancCita = -(pctComp + pctPend);
+
+const topDiagnosticos = stats.topDiagnosticos || [];
+const maxCitas = topDiagnosticos.length > 0 ? topDiagnosticos[0].cantidad : 1;
+
+const topPersonal = stats.topPersonal || [];
+const maxCitasPersonal = topPersonal.length > 0 ? topPersonal[0].cantidad : 1;
+
+const totalLugar = (stats.duermeCama + stats.duermeHamaca) || 1;
+const pctCama = Math.round((stats.duermeCama / totalLugar) * 100);
+const pctHamaca = Math.round((stats.duermeHamaca / totalLugar) * 100);
+
+// D. Helpers de Formato
+const money = (val:number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(val);
+---
+
+<Layout title="Estadísticas | Lab-Somno">
+    <ReturnButton href="/dashboard" text="Volver al dashboard" />
+
+    <main class="max-w-6xl mx-auto pt-20 pb-20 px-4 animate-fade-in">
+        
+        <div class="mb-10">
+            <h1 class="text-4xl font-extrabold text-white mb-2">Panel de Estadísticas</h1>
+            <p class="text-gray-400">Resumen operativo, financiero y clínico.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+            <div class="bg-gray-800/50 border border-gray-700 p-6 rounded-2xl relative overflow-hidden group">
+                <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500/10 rounded-full blur-xl group-hover:bg-blue-500/20 transition-all"></div>
+                <p class="text-gray-400 text-xs font-bold uppercase tracking-widest mb-1">Pacientes Totales</p>
+                <p class="text-4xl font-extrabold text-white">{stats.totalPacientes}</p>
+                <p class="text-xs text-blue-400 mt-2 font-medium">+{stats.pacientesEsteMes} nuevos este mes</p>
+            </div>
+
+            <div class="bg-gray-800/50 border border-gray-700 p-6 rounded-2xl relative overflow-hidden group">
+                <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-purple-500/10 rounded-full blur-xl group-hover:bg-purple-500/20 transition-all"></div>
+                <p class="text-gray-400 text-xs font-bold uppercase tracking-widest mb-1">Edad Promedio</p>
+                <p class="text-4xl font-extrabold text-purple-300">{stats.edadPromedio}</p>
+                <p class="text-xs text-gray-500 mt-2">años de edad</p>
+            </div>
+        </div>
+
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-pink-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            Métricas de Citas y Agenda
+        </h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+            <div class="grid grid-cols-1 gap-4">
+                <div class="bg-gray-800 border border-gray-700 p-5 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-xs uppercase font-bold">Citas Totales (Histórico)</p>
+                        <p class="text-2xl font-bold text-white mt-1">{stats.totalCitas}</p>
+                    </div>
+                    <div class="p-3 bg-gray-700/50 rounded-lg text-gray-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-800 border border-gray-700 p-5 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-xs uppercase font-bold">Por atender (Futuras)</p>
+                        <p class="text-2xl font-bold text-pink-400 mt-1">{stats.citasFuturas}</p>
+                    </div>
+                    <div class="p-3 bg-pink-500/10 rounded-lg text-pink-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800 border border-gray-700 p-5 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-xs uppercase font-bold">Agenda del Mes</p>
+                        <p class="text-2xl font-bold text-indigo-400 mt-1">{stats.citasEsteMes}</p>
+                    </div>
+                    <div class="p-3 bg-indigo-500/10 rounded-lg text-indigo-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl shadow-lg">
+                <h3 class="text-sm font-bold text-gray-300 uppercase mb-4 tracking-wide">Motivos de Consulta</h3>
+                <div class="space-y-4">
+                    {stats.topMotivos.map(({ motivo, count }: { motivo: string; count: number }) => (
+                        <div class="group">
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="text-gray-300 group-hover:text-white transition-colors">{motivo}</span>
+                                <span class="text-gray-500 font-mono">{count}</span>
+                            </div>
+                            <div class="w-full bg-gray-800 rounded-full h-2">
+                                <div class="bg-pink-500 h-2 rounded-full opacity-80 group-hover:opacity-100 transition-all" style={`width: ${(count / stats.totalCitas) * 100}%`}></div>
+                            </div>
+                        </div>
+                    ))}
+                    {stats.topMotivos.length === 0 && <p class="text-gray-500 italic text-sm">No hay datos de motivos.</p>}
+                </div>
+            </div>
+
+            <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl shadow-lg flex flex-col justify-center items-center text-center">
+                <h3 class="text-sm font-bold text-gray-300 uppercase mb-4 tracking-wide w-full text-left">Estado General</h3>
+                
+                <div class="relative w-36 h-36 rounded-full border-[10px] border-gray-800 flex items-center justify-center mb-6">
+                    <svg class="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 36 36">
+                        <path class="text-gray-800" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="3" />
+                        
+                        <path class="text-emerald-500 transition-all duration-1000 ease-out" 
+                            stroke-dasharray={`${pctComp}, 100`} 
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                            fill="none" stroke="currentColor" stroke-width="3" />
+
+                        <path class="text-yellow-500 transition-all duration-1000 ease-out" 
+                            stroke-dasharray={`${pctPend}, 100`} 
+                            stroke-dashoffset={offPendCita}
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                            fill="none" stroke="currentColor" stroke-width="3" />
+
+                        <path class="text-red-500 transition-all duration-1000 ease-out" 
+                            stroke-dasharray={`${pctCanc}, 100`} 
+                            stroke-dashoffset={offCancCita}
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                            fill="none" stroke="currentColor" stroke-width="3" />
+                    </svg>
+                    
+                    <div class="text-center">
+                        <span class="block text-2xl font-bold text-white">{stats.totalCitas}</span>
+                        <span class="text-[10px] text-gray-500 uppercase">Total</span>
+                    </div>
+                </div>
+                
+                <div class="w-full space-y-2">
+                    <div class="flex justify-between items-center text-xs p-2 rounded bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.6)]"></span>
+                            <span class="text-gray-300">Pendientes</span>
+                        </div>
+                        <span class="text-white font-bold">{stats.citasPendientes}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs p-2 rounded bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></span>
+                            <span class="text-gray-300">Completadas</span>
+                        </div>
+                        <span class="text-white font-bold">{stats.citasCompletadas}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs p-2 rounded bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></span>
+                            <span class="text-gray-300">Canceladas</span>
+                        </div>
+                        <span class="text-white font-bold">{stats.citasCanceladas}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-span-3 bg-gray-900 border border-gray-800 p-8 rounded-3xl shadow-xl">
+                <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                    </svg>
+                    Los más ocupados
+                </h3>
+
+                <div class="space-y-5">
+                    {topPersonal.length > 0 ? (
+                        topPersonal.map((persona: any, index:any) => (
+                            <div class="relative group">
+                                <div class="flex justify-between items-end mb-2 z-10 relative">
+                                    <div class="flex items-center gap-3">
+                                        <span class={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                                            index === 0 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50' :
+                                            index === 1 ? 'bg-gray-400/20 text-gray-300 border border-gray-400/50' :
+                                            'bg-amber-700/20 text-amber-600 border border-amber-700/50'
+                                        }`}>
+                                            {index + 1}
+                                        </span>
+                                        <span class="text-sm font-bold text-gray-200">{persona.nombre}</span>
+                                    </div>
+                                    <span class="text-sm font-mono text-blue-300">{persona.cantidad} citas</span>
+                                </div>
+                                
+                                <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-blue-500 h-2 rounded-full transition-all duration-1000" 
+                                         style={`width: ${(persona.cantidad / maxCitasPersonal) * 100}%`}>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div class="text-center py-4">
+                            <p class="text-gray-500 italic text-sm">No hay datos suficientes</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+
+        <hr class="border-gray-800 mb-10" />
+
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-pink-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" /></svg>
+            Métricas de Pacientes
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+            <div class="bg-gray-900 border border-gray-800 p-8 rounded-3xl shadow-xl">
+                <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-pink-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" /></svg>
+                    Distribución por Género
+                </h3>
+                
+                <div class="mb-4">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="text-blue-300 font-medium">Masculino</span>
+                        <span class="text-white font-bold">{stats.hombres} ({porcHombre}%)</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+                        <div class="bg-blue-500 h-3 rounded-full" style={`width: ${porcHombre}%`}></div>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="text-pink-300 font-medium">Femenino</span>
+                        <span class="text-white font-bold">{stats.mujeres} ({porcMujer}%)</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+                        <div class="bg-pink-500 h-3 rounded-full" style={`width: ${porcMujer}%`}></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 border border-gray-800 p-8 rounded-3xl shadow-xl flex flex-col justify-center items-center">
+                <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2 self-start">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-teal-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+                    </svg>
+                    Procedencia de Pacientes
+                </h3>
+
+                <div class="relative w-40 h-40 rounded-full border-[12px] border-gray-800 flex items-center justify-center mb-6">
+                    <svg class="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 36 36">
+                        <path class="text-gray-800" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
+                        
+                        <path class="text-teal-500 transition-all duration-1000 ease-out" 
+                            stroke-dasharray={`${pctPriv}, 100`} 
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                            fill="none" stroke="currentColor" stroke-width="4" />
+
+                        <path class="text-blue-500 transition-all duration-1000 ease-out" 
+                            stroke-dasharray={`${pctServ}, 100`} 
+                            stroke-dashoffset={offServ}
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                            fill="none" stroke="currentColor" stroke-width="4" />
+                        
+                        <path class="text-gray-600 transition-all duration-1000 ease-out" 
+                            stroke-dasharray={`${pctOtros}, 100`} 
+                            stroke-dashoffset={offOtros}
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                            fill="none" stroke="currentColor" stroke-width="4" />
+                    </svg>
+                    
+                    <div class="text-center">
+                        <span class="block text-3xl font-bold text-white">{stats.totalPacientes}</span>
+                        <span class="text-[10px] text-gray-500 uppercase">Total</span>
+                    </div>
+                </div>
+
+                <div class="w-full space-y-3">
+                    <div class="flex items-center justify-between p-2 rounded-lg bg-gray-800/30 border border-gray-700/50">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.6)]"></div>
+                            <span class="text-gray-300 text-sm font-medium">Privado</span>
+                        </div>
+                        <div class="text-right flex items-center gap-2">
+                            <span class="text-white font-bold">{stats.privados}</span>
+                            <span class="text-xs text-gray-500 w-8 text-right">{Math.round(pctPriv)}%</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between p-2 rounded-lg bg-gray-800/30 border border-gray-700/50">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>
+                            <span class="text-gray-300 text-sm font-medium">Servicio Médico</span>
+                        </div>
+                        <div class="text-right flex items-center gap-2">
+                            <span class="text-white font-bold">{stats.servicioMedico}</span>
+                            <span class="text-xs text-gray-500 w-8 text-right">{Math.round(pctServ)}%</span>
+                        </div>
+                    </div>
+                    
+                    {otrosRef > 0 && (
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-gray-800/30 border border-gray-700/50">
+                            <div class="flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full bg-gray-600"></div>
+                                <span class="text-gray-300 text-sm font-medium">Sin asignar</span>
+                            </div>
+                            <div class="text-right flex items-center gap-2">
+                                <span class="text-white font-bold">{otrosRef}</span>
+                                <span class="text-xs text-gray-500 w-8 text-right">{Math.round(pctOtros)}%</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div class="bg-gray-900 border border-gray-800 p-8 rounded-3xl shadow-xl md:col-span-2">
+                <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8"/><path d="M4 10V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M12 4v6"/><path d="M2 18h20"/></svg>
+                    Hábito de Sueño (Lugar)
+                </h3>
+
+                <div class="flex items-center justify-between mb-4 px-2">
+                    <div class="text-left">
+                        <p class="text-xs text-gray-500 font-bold uppercase tracking-wider mb-1">Cama</p>
+                        <p class="text-2xl font-bold text-indigo-300">{stats.duermeCama}</p>
+                        <p class="text-sm text-indigo-500 font-bold">{pctCama}%</p>
+                    </div>
+                    
+                    <div class="text-right">
+                        <p class="text-xs text-gray-500 font-bold uppercase tracking-wider mb-1">Hamaca</p>
+                        <p class="text-2xl font-bold text-orange-300">{stats.duermeHamaca}</p>
+                        <p class="text-sm text-orange-500 font-bold">{pctHamaca}%</p>
+                    </div>
+                </div>
+
+                <div class="relative w-full h-6 bg-gray-800 rounded-full overflow-hidden flex">
+                    <div 
+                        class="h-full bg-gradient-to-r from-indigo-600 to-indigo-400 flex items-center justify-start pl-3 transition-all duration-1000 ease-out" 
+                        style={`width: ${pctCama}%`}
+                    >
+                        {pctCama > 10 && <span class="text-[10px] font-bold text-white opacity-80">Cama</span>}
+                    </div>
+                    
+                    <div class="w-1 h-full bg-gray-900 z-10 transform -skew-x-12 scale-110"></div>
+
+                    <div 
+                        class="h-full bg-gradient-to-l from-orange-600 to-orange-400 flex items-center justify-end pr-3 transition-all duration-1000 ease-out flex-grow"
+                    >
+                        {pctHamaca > 10 && <span class="text-[10px] font-bold text-white opacity-80">Hamaca</span>}
+                    </div>
+                </div>
+
+                <p class="text-xs text-center text-gray-500 mt-4 italic">
+                    Comparativa basada en {totalLugar} pacientes registrados con dato.
+                </p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="md:col-span-2 bg-gray-900 border border-gray-800 p-8 rounded-3xl shadow-xl">
+                <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M7 2a1 1 0 00-.707 1.707L7 4.414v3.758a1 1 0 01-.293.707l-4 4C.817 14.761 2.156 18 4.828 18h10.344c2.673 0 4.012-3.239 2.122-5.121l-4-4A1 1 0 0113 8.172V4.414l.707-.707A1 1 0 0013 2H7zm2 6.172V4h2v4.172a3 3 0 00.879 2.12l1.027 1.028a4 4 0 00-2.171.102l-.47.156a4 4 0 01-2.53 0l-.563-.187a4 4 0 00-2.17-.102l1.027-1.028A3 3 0 009 8.172z" clip-rule="evenodd" />
+                    </svg>
+                    Top Diagnósticos (Frecuencia)
+                </h3>
+                
+                <div class="space-y-4">
+                    {stats.topDiagnosticos.length > 0 ? stats.topDiagnosticos.map(({ nombre, cantidad }: { nombre: string; cantidad: number }) => {
+                        const maxVal = stats.topDiagnosticos[0].cantidad as number;
+                        const porcentaje = (cantidad / maxVal) * 100;
+                        return (
+                            <div class="relative">
+                                <div class="flex justify-between items-end mb-1 z-10 relative">
+                                    <span class="text-sm font-bold text-gray-200 capitalize">{nombre}</span>
+                                    <span class="text-sm font-mono text-indigo-300">{cantidad} ptes.</span>
+                                </div>
+                                <div class="w-full bg-gray-800/50 rounded-lg h-8 relative overflow-hidden flex items-center px-2">
+                                    <div class="absolute top-0 left-0 h-full bg-indigo-600/20 border-r-2 border-indigo-500 transition-all duration-1000" style={`width: ${porcentaje}%`}></div>
+                                </div>
+                            </div>
+                        )
+                    }) : (
+                        <p class="text-gray-500 italic">No hay diagnósticos registrados aún.</p>
+                    )}
+                </div>
+            </div>
+
+            <div class="bg-gray-900 border border-gray-800 p-8 rounded-3xl shadow-xl">
+                <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 3.258-.25 4.5.001.003.012.008.012.008l.004.004.011-.004.004.004.004-.004.004.004.004-.004.011.004.004-.004.011.004.004-.004z" clip-rule="evenodd" />
+                    </svg>
+                    Factores de Riesgo
+                </h3>
+
+                <div class="space-y-4">
+                    <div class="bg-gray-800/40 p-4 rounded-xl border border-red-500/20">
+                        <p class="text-gray-400 text-xs font-bold uppercase mb-1">Obesidad (IMC > 30)</p>
+                        <div class="flex items-end justify-between">
+                            <span class="text-3xl font-bold text-white">{stats.obesidad}</span>
+                            <span class="text-sm text-red-400 font-bold">
+                                {Math.round((stats.obesidad / (stats.totalPacientes || 1)) * 100)}%
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800/40 p-4 rounded-xl border border-yellow-500/20">
+                        <p class="text-gray-400 text-xs font-bold uppercase mb-1">Tabaquismo</p>
+                        <div class="flex items-end justify-between">
+                            <span class="text-3xl font-bold text-white">{stats.fumadores}</span>
+                            <span class="text-sm text-yellow-400 font-bold">
+                                {Math.round((stats.fumadores / (stats.totalPacientes || 1)) * 100)}%
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800/40 p-4 rounded-xl border border-blue-500/20">
+                        <p class="text-gray-400 text-xs font-bold uppercase mb-1">Consumo Alcohol</p>
+                        <div class="flex items-end justify-between">
+                            <span class="text-3xl font-bold text-white">{stats.bebedores}</span>
+                            <span class="text-sm text-blue-400 font-bold">
+                                {Math.round((stats.bebedores / (stats.totalPacientes || 1)) * 100)}%
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</Layout>

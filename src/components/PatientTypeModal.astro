@@ -1,0 +1,93 @@
+---
+/**
+ * @component PatientTypeModal.astro
+ * @description Modal para elegir entre paciente de Sueño o Ánimo antes de registrar
+ */
+---
+
+<dialog id="modal-tipo-paciente" class="bg-transparent p-0 w-full max-w-lg rounded-3xl backdrop:bg-black/60 backdrop:backdrop-blur-sm open:animate-fade-in focus:outline-none">
+    
+    <div class="bg-[#0f172a] border border-white/10 rounded-3xl shadow-2xl p-8 w-full overflow-hidden relative">
+        
+        <div class="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+
+        <div class="flex justify-between items-start mb-6 relative z-10">
+            <div>
+                <h3 class="text-xl font-bold text-white">Nuevo Registro</h3>
+                <p class="text-sm text-gray-400">Selecciona el tipo de paciente</p>
+            </div>
+            <button onclick="document.getElementById('modal-tipo-paciente').close()" class="text-gray-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-full cursor-pointer">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 relative z-10">
+            
+            <a href="/registro/sueno" class="group relative flex items-center gap-4 p-4 rounded-2xl bg-slate-800/50 border border-white/5 hover:bg-blue-600 hover:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-blue-900/20">
+                <div class="p-3 rounded-xl bg-blue-500/20 text-blue-400 group-hover:bg-white/20 group-hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </div>
+                <div>
+                    <h4 class="font-bold text-white text-lg">Paciente de Sueño</h4>
+                    <p class="text-xs text-gray-400 group-hover:text-blue-100">Insomnio, Apnea, Parasomnias...</p>
+                </div>
+                <div class="absolute right-4 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </div>
+            </a>
+
+            <a href="/registro/animo" class="group relative flex items-center gap-4 p-4 rounded-2xl bg-slate-800/50 border border-white/5 hover:bg-purple-600 hover:border-purple-500 transition-all duration-300 shadow-sm hover:shadow-purple-900/20">
+                <div class="p-3 rounded-xl bg-purple-500/20 text-purple-400 group-hover:bg-white/20 group-hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <div>
+                    <h4 class="font-bold text-white text-lg">Estado de Ánimo</h4>
+                    <p class="text-xs text-gray-400 group-hover:text-purple-100">Depresión, Ansiedad, Estrés...</p>
+                </div>
+                <div class="absolute right-4 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </div>
+            </a>
+
+        </div>
+    </div>
+</dialog>
+
+<style>
+    #modal-tipo-paciente {
+        position: fixed;
+        inset: 0;
+        margin: auto;
+    }
+
+    #modal-tipo-paciente::backdrop {
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(4px);
+    }
+
+    /* CAMBIO: Renombramos la animación para evitar conflictos con SystemUpdate */
+    #modal-tipo-paciente[open] {
+        animation: fade-in-patient-modal 0.3s ease-out;
+    }
+
+    @keyframes fade-in-patient-modal {
+        from { 
+            opacity: 0; 
+            transform: scale(0.95) translateY(10px); 
+        }
+        to { 
+            opacity: 1; 
+            transform: scale(1) translateY(0); 
+        }
+    }
+</style>

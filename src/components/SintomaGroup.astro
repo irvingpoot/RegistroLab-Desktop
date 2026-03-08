@@ -1,0 +1,62 @@
+---
+
+/**
+ * @component SintomaGroup
+ * @description Gestor dinámico de síntomas clínicos (Filas de Clave-Valor múltiple).
+ * * FUNCIONALIDAD:
+ * - Permite agregar N cantidad de síntomas, cada uno con sus propios atributos detallados
+ * (Temporalidad, Frecuencia, Gravedad).
+ * - Funciona en modo "Creación" (inicia vacío) y modo "Edición" (renderiza datos existentes).
+ * * MANEJO DE FORMULARIO:
+ * - Utiliza la notación de array en los inputs (`name="sintoma[]"`, `name="temporalidad[]"`, etc.)
+ * para que el servidor reciba vectores sincronizados por índice al procesar el FormData.
+ * * PROPS:
+ * @prop {Array} [sintomas=[]] - Lista de objetos con los síntomas existentes para pre-llenar el formulario.
+ */
+
+interface Props {
+    numero?: number;
+    className?: string;
+    data?: {
+        sintoma?: string;
+        temporalidad?: string;
+        frecuencia?: string;
+        gravedad?: string;
+    };
+}
+
+const { numero = 1, className = "", data = {} } = Astro.props;
+---
+
+<div class={`sintoma-group flex flex-col space-y-4 p-4 border border-gray-700/30 rounded-xl bg-gray-800/10 relative ${className}`}>
+    
+    <div class="absolute -top-3 left-4 bg-gray-900 px-2 text-xs text-blue-400 font-bold uppercase tracking-wider sintoma-titulo">
+        Síntoma {numero}
+    </div>
+
+    <button type="button" class="btn-delete-sintoma hidden absolute -top-3 right-4 bg-gray-900 px-2 text-gray-500 hover:text-red-500 transition-colors cursor-pointer" title="Eliminar síntoma">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+    </button>
+    
+    <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+        <div class="flex grow flex-col">
+            <label class="text-lg font-medium text-gray-300">Síntoma principal</label>
+            <input type="text" name="sintoma" value={data.sintoma || ''} class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all">
+        </div>
+        <div class="flex grow flex-col">
+            <label class="text-lg font-medium text-gray-300">Temporalidad</label>
+            <input type="text" name="temporalidad" value={data.temporalidad || ''} class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all">
+        </div>
+    </div>
+
+    <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+        <div class="flex grow flex-col">
+            <label class="text-lg font-medium text-gray-300">Frecuencia</label>
+            <input type="text" name="frecuencia" value={data.frecuencia || ''} class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all">
+        </div>
+        <div class="flex grow flex-col">
+            <label class="text-lg font-medium text-gray-300">Gravedad</label>
+            <input type="text" name="gravedad" value={data.gravedad || ''} class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all">   
+        </div>
+    </div>
+</div>

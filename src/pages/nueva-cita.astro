@@ -1,0 +1,373 @@
+---
+
+/**
+ * @file nueva-cita.astro
+ * @description Formulario para el registro de nuevas citas en la agenda.
+ * * REGLAS DE NEGOCIO:
+ * 1. Prevención de Solapamiento: Antes de crear la cita, consulta a la BD si ya existe
+ * un registro activo (no cancelado) en ese mismo horario exacto.
+ * 2. Manejo de Zona Horaria: Fuerza la interpretación de la fecha local del navegador
+ * como UTC-6 (Mérida) al agregarle el offset manual antes de guardar en UTC.
+ * 3. Auditoría Automática: Captura el nombre del usuario en sesión (`Astro.locals`)
+ * para llenar el campo `registrado_por` sin intervención manual.
+ * * UI:
+ * - Implementa un modal de éxito a pantalla completa con animación SVG.
+ */
+
+import Layout from "../layouts/Layout.astro"
+import { createClient } from "@supabase/supabase-js"
+import ReturnButton from "../components/ReturnButton.astro"
+import { getLocalUser } from "../utils/localUser";
+
+
+const supabase = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.SUPABASE_KEY
+);
+
+const user = getLocalUser(Astro.cookies);
+
+if (!user) {
+    return Astro.redirect('/');
+}
+
+const nombreRegistrador = user 
+    ? `${user.firstName} ${user.lastName}`.trim() || "Usuario desconocido"
+    : "Anónimo";
+
+const fechaParam = Astro.url.searchParams.get('fecha');
+let fechaDefault = "";
+
+if (fechaParam) {
+    fechaDefault = `${fechaParam}T09:00`;
+}
+
+let listaPsicologos = ["Dr. Juan Pérez", "Dra. Ana Gómez", "Dr. Carlos Ruiz"];
+
+let mensaje = "";
+let error = false;
+let registroExitoso = false;
+
+if (Astro.request.method === "POST") {
+    try {
+        const data = await Astro.request.formData();
+        const fechaLocal = data.get("fecha_hora") as string;
+        const fechaObj = new Date(`${fechaLocal}-06:00`);
+        const fechaISO = fechaObj.toISOString();
+        
+        // 1. Capturar quién atiende
+        const atendidoPor = data.get("atendido_por") as string; 
+
+        // 2. Validación:
+        // Buscamos si YA existe una cita a esa hora CON EL MISMO especialista.
+        const { data: citaExistente } = await supabase
+            .from('citas')
+            .select('id')
+            .eq('fecha_hora', fechaISO)
+            .eq('atendido_por', atendidoPor) // Solo choca si es el mismo psic
+            .neq('estado', 'cancelada') 
+            .maybeSingle();
+
+        if (citaExistente) {
+            throw new Error(`⚠️ Agenda ocupada: ${atendidoPor} ya tiene una cita a esa hora.`);
+        }
+
+        const nuevaCita = {
+            nombre: data.get("nombre"),
+            telefono: data.get("telefono") || null,
+            sintoma: data.get("sintoma") || null,
+            referencia: data.get("referencia"),
+            motivo: data.get("motivo"),
+            fecha_hora: fechaISO,
+            observaciones: data.get("observaciones") || null,
+            estado: 'pendiente',
+            registrado_por_id: nombreRegistrador,
+            atendido_por: atendidoPor
+        };
+
+        const { error: supabaseError } = await supabase
+            .from('citas')
+            .insert([nuevaCita]);
+
+        if (supabaseError) throw supabaseError;
+        registroExitoso = true;
+
+    } catch (e) {
+        console.error(e);
+        error = true;
+        mensaje = e instanceof Error ? e.message : "Ocurrió un error desconocido";
+    }
+}
+---
+
+<Layout title="Agendar Nueva Cita | Lab-Somno">
+    <ReturnButton href="/citas" text="Volver a la Agenda" />
+
+    {registroExitoso && (
+        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm transition-opacity duration-300 px-4">
+            <div class="bg-gray-900 border border-gray-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full transform scale-100 animate-bounce-in">
+                <div class="success-checkmark">
+                    <div class="check-icon">
+                        <span class="icon-line line-tip"></span>
+                        <span class="icon-line line-long"></span>
+                        <div class="icon-circle"></div>
+                        <div class="icon-fix"></div>
+                    </div>
+                </div>
+                <h2 class="text-2xl font-bold text-white mt-4 text-center">¡Agendada!</h2>
+                <p class="text-gray-400 mt-2 text-center">La cita se guardó correctamente.</p>
+                <script>
+                    setTimeout(() => { window.location.replace("/citas"); }, 2000);
+                </script>
+            </div>
+        </div>
+    )}
+
+    {error && (
+        <div class="fixed top-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg text-white shadow-lg bg-red-600 z-50 text-center w-11/12 md:w-auto">
+            {mensaje}
+        </div>
+    )}
+
+    <main class="max-w-7xl mx-auto pt-6 md:pt-10 pb-28 px-4">
+        <div class="flex flex-col items-center justify-center mb-8">
+            <h1 class="text-4xl md:text-6xl font-extrabold text-center leading-tight">
+                Agendar <span class="bg-gradient-to-r from-blue-600 via-blue-300 to-blue-800 bg-clip-text text-transparent">Cita</span>
+            </h1>
+		</div>
+
+        <form method="POST">
+            <div class="flex flex-col items-center justify-center">
+                
+                <h2 class="text-2xl md:text-3xl pb-2 mb-6 border-b border-white/50 text-center text-gray-200 w-fit mx-auto px-10">Datos del Paciente</h2>
+                
+                <div class="flex flex-col space-y-4 w-full max-w-4xl px-2 md:px-0">
+                    <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                        <div class="flex grow flex-col">
+                            <label for="nombre" class="text-lg font-medium text-gray-300">Nombre completo <span class="text-red-500">*</span>:</label>
+                            <input type="text" id="nombre" name="nombre" required class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all">
+                        </div>
+                        <div class="flex grow flex-col md:w-1/3">
+                            <label for="telefono" class="text-lg font-medium text-gray-300">Teléfono:</label>
+                            <input type="tel" id="telefono" name="telefono" class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all">
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                        <div class="flex grow flex-col gap-2">
+                            <label class="text-sm font-medium text-gray-300">
+                                Referencia (Referido por)
+                            </label>
+                            <div class="relative">
+                                <select 
+                                    name="referencia" 
+                                    required
+                                    class="w-full bg-gray-900/50 border border-gray-700 text-white p-3 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none appearance-none transition-all cursor-pointer"
+                                >
+                                    <option value="" disabled selected>Selecciona una opción</option>
+                                    <option value="Servicio Medico">Servicio Médico</option>
+                                    <option value="Particular">Particular</option>
+                                </select>
+                                
+                                <div class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-gray-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex grow flex-col">
+                            <label for="sintoma" class="text-lg font-medium text-gray-300">Motivo de consulta:</label>
+                            <input type="text" id="sintoma" name="sintoma" class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all">
+                        </div>
+                    </div>
+                </div>
+
+                <h2 class="text-2xl md:text-3xl pb-2 mb-6 mt-10 border-b border-white/50 text-center text-gray-200 w-fit mx-auto px-10">Detalles de la Cita</h2>
+                
+                <div class="flex flex-col space-y-6 w-full max-w-4xl px-2 md:px-0">
+                    
+                    <div class="flex flex-col">
+                        <label class="text-lg font-medium text-gray-300 mb-2">Cita de <span class="text-red-500">*</span>:</label>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border border-gray-700 bg-gray-900/50 rounded-xl">
+                            <label class="flex items-center gap-3 cursor-pointer hover:text-blue-400 transition p-2 rounded hover:bg-white/5">
+                                <input type="radio" name="motivo" value="entrevista" required class="accent-blue-500 w-5 h-5">
+                                <span class="font-medium">Entrevista Inicial</span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer hover:text-blue-400 transition p-2 rounded hover:bg-white/5">
+                                <input type="radio" name="motivo" value="seguimiento" required class="accent-blue-500 w-5 h-5">
+                                <span class="font-medium">Seguimiento</span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer hover:text-blue-400 transition p-2 rounded hover:bg-white/5">
+                                <input type="radio" name="motivo" value="tratamiento" required class="accent-blue-500 w-5 h-5">
+                                <span class="font-medium">Tratamiento</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                        <div class="flex grow flex-col">
+                            <label for="atendido_por" class="text-lg font-medium text-gray-300">¿Quién atenderá? <span class="text-red-500">*</span></label>
+                            <div class="relative">
+                                <select id="atendido_por" name="atendido_por" required class="w-full mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white appearance-none transition-all cursor-pointer">
+                                    <option value="" disabled selected>Seleccionar especialista</option>
+                                    {listaPsicologos.map((nombreDoc) => (
+                                        <option class="bg-gray-900" value={nombreDoc}>
+                                            {nombreDoc}
+                                        </option>
+                                    ))}
+                                    <option class="bg-gray-900 text-gray-400" value="Por asignar">-- Por definir --</option>
+                                </select>
+                                <div class="absolute inset-y-0 right-0 flex items-center px-3 pt-1 pointer-events-none text-gray-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col md:flex-row gap-4 md:gap-7">
+                        <div class="flex grow flex-col">
+                            <label for="fecha_hora" class="text-lg font-medium text-gray-300">Seleccionar fecha <span class="text-red-500">*</span>:</label>
+                            <input 
+                                type="datetime-local" 
+                                id="fecha_hora" 
+                                name="fecha_hora" 
+                                required 
+                                value={fechaDefault}  class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition-all cursor-pointer"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col mt-4">
+                        <label for="observaciones" class="text-lg font-medium text-gray-300">Observaciones:</label>
+                        <textarea id="observaciones" name="observaciones" rows="3" class="mt-1 p-3 border border-gray-700 bg-gray-900/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y text-white transition-all"></textarea>
+                    </div>
+                </div>
+
+                <div class="pt-10 pb-10 w-full max-w-4xl flex justify-end">
+                    <button type="submit" class="w-full md:w-auto bg-blue-600 text-white text-lg font-semibold px-8 py-3 rounded-xl hover:bg-blue-500 hover:scale-105 transition duration-300 cursor-pointer active:scale-95 flex items-center justify-center gap-2">
+                        Agendar Cita
+                    </button>
+                </div>
+                
+            </div>
+        </form>
+    </main>
+</Layout>
+
+<style>
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+        filter: invert(1);
+        cursor: pointer;
+    }
+
+    .success-checkmark {
+        width: 80px;
+        height: 115px;
+        margin: 0 auto;
+        
+        .check-icon {
+            width: 80px;
+            height: 80px;
+            position: relative;
+            border-radius: 50%;
+            box-sizing: content-box;
+            border: 4px solid #4CAF50;
+            
+            &::before {
+                top: 3px;
+                left: -2px;
+                width: 30px;
+                transform-origin: 100% 50%;
+                border-radius: 100px 0 0 100px;
+            }
+            
+            &::after {
+                top: 0;
+                left: 30px;
+                width: 60px;
+                transform-origin: 0 50%;
+                border-radius: 0 100px 100px 0;
+                animation: rotate-circle 4.25s ease-in;
+            }
+            
+            &::before, &::after {
+                content: '';
+                height: 100px;
+                position: absolute;
+                background: #111827; 
+                transform: rotate(-45deg);
+            }
+            
+            .icon-line {
+                height: 5px;
+                background-color: #4CAF50;
+                display: block;
+                border-radius: 2px;
+                position: absolute;
+                z-index: 10;
+                
+                &.line-tip {
+                    top: 46px;
+                    left: 14px;
+                    width: 25px;
+                    transform: rotate(45deg);
+                    animation: icon-line-tip 0.75s;
+                }
+                
+                &.line-long {
+                    top: 38px;
+                    right: 8px;
+                    width: 47px;
+                    transform: rotate(-45deg);
+                    animation: icon-line-long 0.75s;
+                }
+            }
+            
+            .icon-circle {
+                top: -4px;
+                left: -4px;
+                z-index: 10;
+                width: 80px;
+                height: 80px;
+                border-radius: 50%;
+                position: absolute;
+                box-sizing: content-box;
+                border: 4px solid rgba(76, 175, 80, .5);
+            }
+            
+            .icon-fix {
+                top: 8px;
+                width: 5px;
+                left: 26px;
+                z-index: 1;
+                height: 85px;
+                position: absolute;
+                transform: rotate(-45deg);
+                background-color: #111827;
+            }
+        }
+    }
+
+    @keyframes rotate-circle {
+        0% { transform: rotate(-45deg); }
+        5% { transform: rotate(-45deg); }
+        12% { transform: rotate(-405deg); }
+        100% { transform: rotate(-405deg); }
+    }
+
+    @keyframes icon-line-tip {
+        0% { width: 0; left: 1px; top: 19px; }
+        54% { width: 0; left: 1px; top: 19px; }
+        70% { width: 50px; left: -8px; top: 37px; }
+        84% { width: 17px; left: 21px; top: 48px; }
+        100% { width: 25px; left: 14px; top: 46px; }
+    }
+
+    @keyframes icon-line-long {
+        0% { width: 0; right: 46px; top: 54px; }
+        65% { width: 0; right: 46px; top: 54px; }
+        84% { width: 55px; right: 0px; top: 35px; }
+        100% { width: 47px; right: 8px; top: 38px; }
+    }
+</style>

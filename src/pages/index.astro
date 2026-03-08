@@ -1,0 +1,87 @@
+---
+// src/pages/index.astro
+import Layout from '../layouts/Layout.astro';
+
+const usuarios = [
+    { id: "irvingpoot", nombre: "Irving", lastName: "Poot", avatar:"https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvdXBsb2FkZWQvaW1nXzM4UERLeVFyektNc2lWM21xcUVneENIUXB6MCJ9", color:"group-hover:ring-blue-500" },
+    { id: "lizcristobal", nombre: "Liz", lastName: "Cristóbal", avatar:"https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvdXBsb2FkZWQvaW1nXzM4MXNBd2gwUjNha2xqTlBGSjZZRWNHV21TVCJ9", color:"group-hover:ring-blue-500" },
+    { id: "jesusmoo", nombre: "Jesús", lastName: "Moo", avatar:"https://img.clerk.com/eyJ0eXBlIjoiZGVmYXVsdCIsImlpZCI6Imluc18zMmwyUmJNdkxPemFPNWtNd1Z4ZVduMkc5QkkiLCJyaWQiOiJ1c2VyXzMycHhaaEVZY2xsTW9EZUtCSmpKSldPU0VhdCIsImluaXRpYWxzIjoiSk0ifQ", color:"group-hover:ring-purple-500" },
+    { id: "jacqiravell", nombre: "Jacquelin", lastName: "Ravell", avatar:"https://img.clerk.com/eyJ0eXBlIjoiZGVmYXVsdCIsImlpZCI6Imluc18zMmwyUmJNdkxPemFPNWtNd1Z4ZVduMkc5QkkiLCJyaWQiOiJ1c2VyXzM4TGdsa0VBeGZZT3VWdXlFM1lhWVZnUUVGaCIsImluaXRpYWxzIjoiSlIifQ", color:"group-hover:ring-pink-500" },
+    { id: "sorayashurair", nombre: "Soraya", lastName: "Shurair", avatar:"https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvdXBsb2FkZWQvaW1nXzM4TGdGM0NEV29ibHoxcDVDUjl1alVlc1E4biJ9", color:"group-hover:ring-yellow-500" },
+    { id: "litzybalam", nombre: "Litzy", lastName: "Balam", avatar:"https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvdXBsb2FkZWQvaW1nXzM4YTR3akZvVEdTcXpaRjRrT0NGY2FndnVWciJ9", color:"group-hover:ring-red-500" },
+    { id: "fridaflores", nombre: "Frida", lastName: "Flores", avatar:"https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvdXBsb2FkZWQvaW1nXzM4d1pYVXdKTjVPQVFYRVR6UUJTa1gxVUd4eiJ9", color:"group-hover:ring-green-500" }
+];
+---
+
+<Layout title="Lab-Somno | Selección de Perfil">
+    <div class="relative flex flex-col min-h-screen text-white overflow-hidden">
+        
+        <div id="loader" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#0f172a] opacity-0 pointer-events-none transition-opacity duration-500">
+            <div class="relative">
+                <img id="loader-avatar" src="" class="w-32 h-32 md:w-44 md:h-44 rounded-2xl border-4 border-blue-500 shadow-[0_0_50px_rgba(37,99,235,0.3)] animate-pulse" />
+                <div class="absolute -bottom-12 left-1/2 -translate-x-1/2">
+                    <div class="w-8 h-8 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+                </div>
+            </div>
+            <h2 id="loader-name" class="mt-20 text-2xl font-bold tracking-widest uppercase animate-pulse">Iniciando Sesión...</h2>
+        </div>
+
+        <main id="main-content" class="flex-grow flex flex-col items-center justify-center px-6 relative z-10 transition-transform duration-700">
+            <div class="text-center mb-16">
+                <h1 class="text-4xl md:text-5xl font-black tracking-tight mb-4">¿Quién está trabajando <span class="text-blue-500">hoy?</span></h1>
+                <p class="text-gray-400 text-lg">Selecciona tu perfil para acceder al sistema</p>
+            </div>
+
+            <div class="flex flex-wrap justify-center gap-8 md:gap-12 max-w-5xl">
+                {usuarios.map((user) => (
+                    <button 
+                        class="group flex flex-col items-center gap-4 transition-all duration-300"
+                        onclick={`iniciarSesion('${user.id}', '${user.nombre}', '${user.avatar}')`}
+                    >
+                        <div class="relative">
+                            <div class={`w-32 h-32 md:w-44 md:h-44 rounded-2xl overflow-hidden ring-4 ring-transparent transition-all duration-300 transform group-hover:scale-105 group-hover:ring-offset-4 group-hover:ring-offset-[#0f172a] shadow-2xl ${user.color}`}>
+                                <img src={user.avatar} alt={user.nombre} class="w-full h-full object-cover" />
+                            </div>
+                        </div>
+                        <h3 class="text-lg md:text-xl font-bold text-gray-400 group-hover:text-white transition-colors">{user.nombre}</h3>
+                    </button>
+                ))}
+            </div>
+        </main>
+    </div>
+</Layout>
+
+<style>
+    .animate-fade-in {
+        animation: fadeIn 0.8s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+<script is:inline>
+    function iniciarSesion(id, nombre, avatar) {
+        const loader = document.getElementById('loader');
+        const mainContent = document.getElementById('main-content');
+        const loaderAvatar = document.getElementById('loader-avatar');
+        const loaderName = document.getElementById('loader-name');
+
+        loaderAvatar.src = avatar;
+        loaderName.innerText = `Hola, ${nombre}`;
+
+        document.cookie = `user_session=${id}; path=/; max-age=${60 * 60 * 24 * 7}`;
+
+        mainContent.style.transform = 'scale(0.9) translateY(20px)';
+        mainContent.style.opacity = '0';
+        
+        loader.classList.remove('opacity-0', 'pointer-events-none');
+        loader.classList.add('opacity-100');
+
+        setTimeout(() => {
+            window.location.href = '/dashboard';
+        }, 1200);
+    }
+</script>

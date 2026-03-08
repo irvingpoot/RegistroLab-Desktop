@@ -1,0 +1,386 @@
+---
+
+/**
+ * @file citas.astro
+ * @description Vista de calendario mensual para la gestión de citas.
+ * * FUNCIONALIDAD:
+ * - Navegación: Permite moverse entre meses usando Query Params (?month=X&year=Y).
+ * - Filtrado: Usa `.gte()` y `.lte()` para descargar estrictamente las citas del mes visible.
+ * - Renderizado: Genera una cuadrícula de días reales + días de relleno (padding)
+ * para alinear correctamente el primer día del mes (Lunes, Martes, etc.).
+ * - Interactividad: Usa <dialog> nativo para ver los detalles de las citas de un día.
+ */
+
+import Layout from "../layouts/Layout.astro"
+import CitaCard from "../components/CitaCard.astro"
+import ReturnButton from "../components/ReturnButton.astro"
+import { createClient } from "@supabase/supabase-js"
+import { getLocalUser } from "../utils/localUser";
+
+// 1. CONFIGURACIÓN
+const supabase = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.SUPABASE_KEY
+);
+
+const getMeridaDate = () => {
+    const d = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Merida',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric'
+    });
+    const parts = formatter.formatToParts(d);
+    const year = parseInt(parts.find(p => p.type === 'year')?.value || '0');
+    const month = parseInt(parts.find(p => p.type === 'month')?.value || '0') - 1;
+    const day = parseInt(parts.find(p => p.type === 'day')?.value || '0');
+    return new Date(year, month, day);
+};
+
+const today = getMeridaDate();
+const currentYear = parseInt(Astro.url.searchParams.get('year') || today.getFullYear().toString());
+const currentMonth = parseInt(Astro.url.searchParams.get('month') || today.getMonth().toString());
+
+const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const displayMonth = monthNames[currentMonth];
+
+// 2. LÓGICA DE CALENDARIO
+const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+const baseYear = new Date().getFullYear();
+const yearsRange = Array.from({ length: 3 }, (_, i) => baseYear - 1 + i);
+
+const prevDate = new Date(currentYear, currentMonth - 1, 1);
+const nextDate = new Date(currentYear, currentMonth + 1, 1);
+const prevLink = `?month=${prevDate.getMonth()}&year=${prevDate.getFullYear()}`;
+const nextLink = `?month=${nextDate.getMonth()}&year=${nextDate.getFullYear()}`;
+
+const startDateStr = new Date(currentYear, currentMonth, 1).toISOString();
+const endDateStr = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59).toISOString();
+
+const user = getLocalUser(Astro.cookies);
+if (!user) {
+    return Astro.redirect('/');
+}
+
+const nombreRegistrador = user 
+    ? `${user.firstName} ${user.lastName}`.trim()
+    : "Sistema";
+
+// --- LÓGICA PARA ACTUALIZAR ESTADO ---
+if (Astro.request.method === "POST") {
+    try {
+        const data = await Astro.request.formData();
+        const citaId = data.get("id_cita");
+        const accion = data.get("accion");
+
+        if (citaId && accion) {
+            if (accion === 'reagendar') {
+                const nuevaFecha = data.get("nueva_fecha") as string;
+                const fechaObj = new Date(`${nuevaFecha}-06:00`);
+                const nuevaFechaISO = fechaObj.toISOString();
+                
+                const { data: citaOriginal, error: errorFetch } = await supabase
+                    .from('citas')
+                    .select('*')
+                    .eq('id', citaId)
+                    .single();
+
+                if (!errorFetch && citaOriginal) {
+                    const { error: insertError } = await supabase
+                        .from('citas')
+                        .insert({
+                            fecha_hora: nuevaFechaISO, 
+                            nombre: citaOriginal.nombre,
+                            telefono: citaOriginal.telefono,
+                            motivo: citaOriginal.motivo,
+                            sintoma: citaOriginal.sintoma,
+                            referencia: citaOriginal.referencia,
+                            atendido_por: citaOriginal.atendido_por,
+                            observaciones: citaOriginal.observaciones,
+                            estado: 'pendiente', 
+                            registrado_por_id: nombreRegistrador 
+                        });
+
+                    if (!insertError) {
+                        // CORRECCIÓN AQUÍ: Forzamos la zona horaria a Mérida para el texto
+                        const fechaTexto = fechaObj.toLocaleString('es-MX', { 
+                            timeZone: 'America/Merida',
+                            year: 'numeric', month: 'numeric', day: 'numeric',
+                            hour: '2-digit', minute: '2-digit', hour12: true
+                        });
+
+                        const notaReagenda = `\n[Cita reagendada para el: ${fechaTexto} por ${nombreRegistrador}]`;
+                        
+                        await supabase
+                            .from('citas')
+                            .update({ 
+                                estado: 'cancelada',
+                                observaciones: (citaOriginal.observaciones || '') + notaReagenda
+                            })
+                            .eq('id', citaId);
+                            
+                        return Astro.redirect(Astro.url.href);
+                    }
+                }
+            } else {
+                const nuevoEstado = accion === 'completar' ? 'completada' : 'cancelada';
+                await supabase.from('citas').update({ estado: nuevoEstado }).eq('id', citaId);
+            }
+        }
+    } catch (e) {
+        console.error("Error procesando cita:", e);
+    }
+}
+
+// Seleccionamos todo (*) para tener estado, nombre, motivo, etc.
+const { data: citasRaw, error } = await supabase
+    .from('citas')
+    .select(`
+        id,
+        fecha_hora,
+        nombre,
+        estado,
+        referencia,
+        sintoma,
+        telefono,
+        motivo,
+        atendido_por,
+        observaciones
+    `) 
+    .gte('fecha_hora', startDateStr)
+    .lte('fecha_hora', endDateStr)
+    .order('fecha_hora', { ascending: true });
+
+if (error) console.error("Error fetching citas:", error);
+
+const citasPorDia = new Map();
+
+citasRaw?.forEach((cita) => {
+    // Convertir UTC a fecha local simple para agrupar
+    const fecha = new Date(cita.fecha_hora);
+    const dia = fecha.getDate(); 
+    
+    if (!citasPorDia.has(dia)) {
+        citasPorDia.set(dia, []);
+    }
+    citasPorDia.get(dia).push(cita);
+});
+---
+
+<Layout title={`Agenda - ${displayMonth} ${currentYear} | Lab-Somno`}>
+	<ReturnButton href="/dashboard" text="Volver al dashboard" />
+    <main class="max-w-7xl mx-auto pt-8 pb-20 px-4">
+        
+        <div class="flex flex-col md:flex-row justify-between items-end mb-8 gap-6 border-b border-white/10 pb-6">
+            <div>
+                <p class="text-blue-400 font-bold uppercase tracking-wider text-xs mb-1">Agenda Mensual</p>
+                <h1 class="text-4xl font-extrabold text-white capitalize">{displayMonth} {currentYear}</h1>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <a href="/citas" class="bg-blue-600 hover:bg-blue-500 text-white font-medium w-10 h-10 md:w-auto md:px-4 rounded-full flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all hover:scale-105">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="#fff" viewBox="0 0 24 24"><path id="SVGRepo_iconCarrier" fill="#fff" d="M4.395 12.001a.75.75 0 0 0 1.5-.001zm1.894-3.89.63.407zm3.046-2.577-.295-.69h-.001zm3.921-.4.152-.735h-.002zM16.73 7.05l-.54.52zm.984 3.157a.75.75 0 0 0 1.442-.415zm-.005-.396a.75.75 0 1 0 1.452.377zm2.162-2.355a.75.75 0 1 0-1.452-.377zm-1.636 3.266a.75.75 0 0 0 .4-1.445zm-2.25-2.177a.75.75 0 1 0-.399 1.446zM19.896 12a.75.75 0 1 0-1.5.001zm-1.894 3.89-.63-.407zm-3.046 2.578.296.689zm-3.921.4-.152.734h.002zM7.56 16.95l.54-.52v-.002zm-.984-3.158a.75.75 0 0 0-1.442.415zm.005.396a.75.75 0 1 0-1.452-.377zm-2.162 2.355a.75.75 0 1 0 1.452.377zm1.636-3.266a.75.75 0 0 0-.4 1.445zm2.25 2.178a.75.75 0 0 0 .399-1.446zM5.894 12a6.4 6.4 0 0 1 1.024-3.482l-1.26-.813A7.9 7.9 0 0 0 4.395 12zM6.92 8.518a6.1 6.1 0 0 1 2.71-2.295l-.59-1.378a7.6 7.6 0 0 0-3.38 2.86zm2.71-2.295a5.85 5.85 0 0 1 3.476-.355l.3-1.47a7.35 7.35 0 0 0-4.366.446zm3.473-.355A6 6 0 0 1 16.19 7.57l1.08-1.04a7.5 7.5 0 0 0-3.861-2.132zm3.088 1.704a6.3 6.3 0 0 1 1.523 2.636l1.442-.415a7.8 7.8 0 0 0-1.887-3.264zm2.97 2.617.71-2.732-1.452-.377-.71 2.732zm-.526-.911-2.65-.732-.399 1.446 2.65.731zM18.395 12a6.4 6.4 0 0 1-1.024 3.482l1.26.813A7.9 7.9 0 0 0 19.895 12zm-1.024 3.482a6.1 6.1 0 0 1-2.712 2.296l.592 1.378a7.6 7.6 0 0 0 3.38-2.861zm-2.711 2.295a5.85 5.85 0 0 1-3.476.355l-.3 1.47a7.35 7.35 0 0 0 4.367-.446zm-3.473.355A6 6 0 0 1 8.1 16.43l-1.08 1.041a7.47 7.47 0 0 0 3.862 2.13zM8.099 16.43a6.3 6.3 0 0 1-1.523-2.637l-1.442.415a7.8 7.8 0 0 0 1.887 3.264zm-2.97-2.618-.71 2.732 1.452.377.71-2.732zm.526.912 2.65.732.399-1.446-2.65-.732z"/></svg>
+                    <span class="hidden md:inline text-sm">Actualizar calendario</span>
+                </a>
+                <div class="flex items-center bg-gray-800/50 border border-gray-700 rounded-full p-1 backdrop-blur-md">
+                    <a href={prevLink} class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                    </a>
+                    
+                    <form action="" method="GET" class="flex items-center gap-1 px-2">
+                        <div class="relative group">
+                            <select name="month" onchange="this.form.submit()" class="appearance-none bg-transparent text-white font-bold text-sm uppercase tracking-wide cursor-pointer focus:outline-none hover:text-blue-400 transition-colors px-4 py-1">
+                                {monthNames.map((m, i) => (
+                                    <option value={i} selected={i === currentMonth} class="bg-gray-900 text-gray-300">
+                                        {m.substring(0, 3)}
+                                    </option>
+                                ))}
+                            </select>
+                            <div class="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 group-hover:text-blue-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+                            </div>
+                        </div>
+
+                        <span class="text-gray-600 mr-1">/</span>
+
+                        <div class="relative group">
+                            <select name="year" onchange="this.form.submit()" class="appearance-none bg-transparent text-white font-bold text-sm cursor-pointer focus:outline-none hover:text-blue-400 transition-colors px-4 py-1">
+                                {yearsRange.map((y) => (
+                                    <option value={y} selected={y === currentYear} class="bg-gray-900 text-gray-300">
+                                        {y}
+                                    </option>
+                                ))}
+                            </select>
+                            <div class="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 group-hover:text-blue-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+                            </div>
+                        </div>
+                    </form>
+
+                    <a href={nextLink} class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                    </a>
+                </div>
+
+                <a href="/nueva-cita" class="bg-blue-600 hover:bg-blue-500 text-white font-medium w-10 h-10 md:w-auto md:px-4 rounded-full flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all hover:scale-105">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    <span class="hidden md:inline text-sm">Agendar nueva cita</span>
+                </a>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            
+            <div class="grid grid-cols-7 text-center">
+                {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map((day, i) => (
+                    <div class={`text-xs font-bold uppercase tracking-widest py-2 ${i === 0 || i === 6 ? 'text-blue-400/70' : 'text-gray-500'}`}>
+                        {day}
+                    </div>
+                ))}
+            </div>
+
+            <div class="grid grid-cols-7 gap-2 md:gap-4 auto-rows-[140px]">
+                
+                {Array.from({ length: firstDayOfMonth }).map(() => (
+                    <div class="pointer-events-none"></div>
+                ))}
+
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const dayNum = i + 1;
+                    const citasDia = citasPorDia.get(dayNum) || [];
+                    const isToday = dayNum === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
+                    
+                    return (
+                        <div 
+                            class={`group relative p-3 rounded-2xl border transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden
+                                ${isToday 
+                                    ? 'bg-blue-600/20 border-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.2)]' 
+                                    : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 hover:scale-[1.02] hover:shadow-xl'
+                                }
+                            `}
+                            onclick={`window.openDayModal(${dayNum})`}
+                        >
+                            <div class="flex justify-between items-start z-10">
+                                <span class={`text-lg font-bold leading-none ${isToday ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'}`}>
+                                    {dayNum}
+                                </span>
+                                {citasDia.length > 0 && (
+                                    <span class="flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-bold bg-white text-gray-900 rounded-full shadow-sm">
+                                        {citasDia.length}
+                                    </span>
+                                )}
+                            </div>
+
+                            <div class="space-y-1 mt-2 z-10">
+                                {citasDia.slice(0, 2).map((cita: any) => (
+                                    <div class="flex items-center gap-1.5 text-[10px] text-gray-300 bg-gray-900/40 rounded px-1.5 py-1 backdrop-blur-sm border border-white/5 truncate">
+                                        <div class={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                            cita.estado === 'completada' ? 'bg-emerald-400' : 
+                                            cita.estado === 'cancelada' ? 'bg-red-400' : 'bg-amber-400'
+                                        }`}></div>
+                                        <span class="truncate opacity-90">{cita.nombre ? cita.nombre.split(' ')[0] : 'Cita'}</span>
+                                    </div>
+                                ))}
+                                {citasDia.length > 2 && (
+                                    <div class="text-[10px] text-center text-gray-500 font-medium group-hover:text-gray-300">+ {citasDia.length - 2} más</div>
+                                )}
+                            </div>
+                            
+                            {isToday && <div class="absolute bottom-0 inset-x-0 h-1 bg-blue-500"></div>}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    </main>
+
+    <div id="citas-store" class="hidden" style="content-visibility: auto;">
+        {Array.from(citasPorDia.entries()).map(([dia, citas]) => (
+            <div data-day={dia} class="space-y-4">
+                {citas.map((cita: any) => (
+                    <CitaCard cita={cita} />
+                ))}
+            </div>
+        ))}
+    </div>
+
+    <dialog id="modal-dia" class="m-auto bg-gray-900 border border-gray-700 rounded-3xl shadow-2xl backdrop:backdrop-blur-xl w-full max-w-lg text-left p-0 overflow-hidden outline-none">
+        <div class="relative bg-gray-800/30 p-6 border-b border-gray-700/50">
+            <div class="relative z-10 flex justify-between items-start">
+                <div>
+                    <p class="text-xs text-blue-400 font-bold uppercase tracking-wider mb-1" id="modal-mes-anio"></p>
+                    <h3 class="text-3xl font-extrabold text-white">Día <span id="modal-dia-num" class="text-blue-400"></span></h3>
+                </div>
+                <button onclick="document.getElementById('modal-dia').close()" class="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors">✕</button>
+            </div>
+        </div>
+
+        <div class="p-6 max-h-[50vh] overflow-y-auto" id="modal-lista-citas"></div>
+
+        <div class="p-4 bg-gray-950/30 border-t border-gray-800/50 flex justify-center">
+            <a id="btn-agendar-modal" href="/nueva-cita" class="text-xs font-bold text-gray-400 hover:text-blue-400 flex items-center gap-2 transition-colors uppercase tracking-widest py-2">
+                <span class="text-lg leading-none">+</span> Agendar cita
+            </a>
+        </div>
+    </dialog>
+</Layout>
+
+<style>
+    /* Estilo para Scrollbar en WebKit */
+    #modal-lista-citas::-webkit-scrollbar { width: 4px; }
+    #modal-lista-citas::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+    
+    dialog::backdrop {
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(8px);
+    }
+    dialog[open] {
+        animation: modalFadeIn 0.2s ease-out;
+    }
+    @keyframes modalFadeIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+    }
+</style>
+
+<script define:vars={{ displayMonth, currentYear, currentMonth }}>
+    window.mesNombre = displayMonth;
+    window.anio = currentYear;
+    window.mesNumero = currentMonth;
+
+    window.openDayModal = (day) => {
+        const modal = document.getElementById('modal-dia');
+        const listaContainer = document.getElementById('modal-lista-citas');
+        const btnAgendar = document.getElementById('btn-agendar-modal');
+        
+        document.getElementById('modal-dia-num').textContent = day;
+        document.getElementById('modal-mes-anio').textContent = `${window.mesNombre} ${window.anio}`;
+
+        if (btnAgendar) {
+            const m = String(window.mesNumero + 1).padStart(2, '0');
+            const d = String(day).padStart(2, '0');
+            const fechaISO = `${window.anio}-${m}-${d}`;
+            
+            btnAgendar.href = `/nueva-cita?fecha=${fechaISO}`;
+        }
+
+        const tarjetasGuardadas = document.querySelector(`#citas-store div[data-day="${day}"]`);
+        
+        if (tarjetasGuardadas && tarjetasGuardadas.children.length > 0) {
+            listaContainer.innerHTML = tarjetasGuardadas.outerHTML;
+            listaContainer.firstElementChild.classList.remove('hidden');
+            listaContainer.firstElementChild.classList.add('block');
+        } else {
+            listaContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-12 text-gray-500 border-2 border-dashed border-gray-800 rounded-2xl">
+                    <p class="font-medium">Sin citas programadas</p>
+                    <p class="text-xs mt-1 opacity-60">Tiempo libre disponible</p>
+                </div>
+            `;
+        }
+
+        modal.showModal();
+    }
+</script>

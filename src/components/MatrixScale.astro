@@ -1,0 +1,167 @@
+---
+
+/**
+ * @component MatrixScale
+ * @description Tabla de matriz para preguntas de Escala Likert (Opción Múltiple en grilla).
+ * * CASO DE USO:
+ * - Se utiliza cuando múltiples preguntas comparten las mismas opciones de respuesta
+ * (ej: 0=Nunca, 1=A veces, 2=Siempre).
+ * * LÓGICA DE RENDERIZADO:
+ * - Itera sobre el array `questions` para crear las filas.
+ * - Itera sobre el array `options` para crear las columnas de radio buttons.
+ * - Genera nombres de inputs secuenciales basados en el `idPrefix` (ej: 'epworth_1', 'epworth_2'...).
+ * * ACCESIBILIDAD:
+ * - Utiliza inputs tipo `radio` para asegurar que solo se elija una opción por fila.
+ * * PROPS:
+ * @prop {string} title - Título de la sección del cuestionario.
+ * @prop {string} description - Instrucciones para el paciente.
+ * @prop {Array} questions - Lista de textos de las preguntas.
+ * @prop {Array} options - Lista de objetos { value, label, mobileLabel } para las respuestas.
+ * @prop {string} idPrefix - Prefijo base para el atributo 'name' de los inputs.
+ * @prop {string} [color='blue'] - Color del tema para los controles seleccionados.
+ */
+
+interface Option {
+    label: string;
+    value: number;
+}
+
+interface Question {
+    id: string;
+    text: string;
+}
+
+interface Props {
+    instruction?: string;
+    scaleLabel?: string;
+    questions: Question[];
+    options: Option[];
+    // 1. Agregamos la prop de color
+    color?: 'blue' | 'purple' | 'emerald'; 
+}
+
+const { 
+    instruction, 
+    scaleLabel, 
+    questions, 
+    options,
+    color = 'blue' // Valor por defecto
+} = Astro.props;
+
+// 2. Definimos los estilos según el color seleccionado
+const themeStyles = {
+    blue: {
+        label: "text-blue-600",
+        active: "peer-checked:border-blue-600 peer-checked:text-blue-600 peer-checked:bg-blue-50",
+    },
+    purple: {
+        label: "text-purple-600",
+        active: "peer-checked:border-purple-600 peer-checked:text-purple-600 peer-checked:bg-purple-50",
+    },
+    emerald: {
+        label: "text-emerald-600",
+        active: "peer-checked:border-emerald-600 peer-checked:text-emerald-600 peer-checked:bg-emerald-50",
+    }
+};
+
+const currentTheme = themeStyles[color] || themeStyles.blue;
+---
+
+<div class="w-full font-sans text-gray-700">
+    {/* Instrucciones */}
+    {instruction && (
+        <div class="mb-4 text-lg text-center px-4">
+        <p>{instruction}</p>
+        </div>
+    )}
+
+    {/* Etiqueta de la escala (Usamos el color dinámico) */}
+    {scaleLabel && (
+        <div class={`mb-6 uppercase text-sm font-semibold tracking-wide text-center px-4 ${currentTheme.label}`}>
+        {scaleLabel}
+        </div>
+    )}
+
+    {/* ========================================= */}
+    {/* VISTA DE ESCRITORIO (Tabla) - Se oculta en móviles */}
+    {/* ========================================= */}
+    <div class="hidden md:block overflow-x-auto">
+        <table class="w-full min-w-[700px] border-collapse">
+        <thead>
+            <tr>
+            <th class="p-4 text-left w-2/5"></th>
+            {options.map((option) => (
+                <th class="p-4 text-center w-[15%] align-bottom">
+                <div class="flex flex-col items-center justify-end h-full">
+                    <span class="text-sm font-medium text-gray-900">
+                    {option.label}
+                    </span>
+                </div>
+                </th>
+            ))}
+            </tr>
+        </thead>
+        <tbody>
+            {questions.map((question, index) => (
+            <tr class={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                <td class="p-6 text-base font-normal text-gray-700 leading-snug border-t border-gray-100">
+                {question.text}
+                </td>
+                {options.map((option) => (
+                <td class="p-4 text-center border-t border-gray-100">
+                    <div class="flex justify-center items-center">
+                    <input
+                        type="radio"
+                        name={question.id}
+                        value={option.value}
+                        class="w-6 h-6 accent-blue-600 cursor-pointer"
+                        required
+                    />
+                    </div>
+                </td>
+                ))}
+            </tr>
+            ))}
+        </tbody>
+        </table>
+    </div>
+
+    {/* ========================================= */}
+    {/* VISTA MÓVIL (Lista de Tarjetas) - Se muestra solo en móviles */}
+    {/* ========================================= */}
+    <div class="md:hidden space-y-4">
+        {questions.map((question, index) => (
+            <div class={`p-4 border-t border-gray-100 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                <p class="text-base font-medium text-gray-900 mb-4 leading-snug">
+                {question.text}
+                </p>
+
+                <div class="flex flex-wrap gap-2">
+                {options.map((option) => (
+                    <label class="flex-1 min-w-[80px] relative cursor-pointer">
+                    <input
+                        type="radio"
+                        name={`${question.id}`}
+                        value={option.value}
+                        class="peer sr-only"
+                        required
+                    />
+                    {/* APLICAMOS LAS CLASES DINÁMICAS AQUÍ */}
+                    <div class={`
+                        flex items-center justify-center 
+                        py-2 px-3 text-sm text-center
+                        bg-white border border-gray-300 rounded-md
+                        text-gray-700 transition-all
+                        hover:bg-gray-50 hover:border-gray-400
+                        peer-checked:font-medium select-none
+                        ${currentTheme.active}
+                    `}>
+                        {option.label}
+                    </div>
+                    </label>
+                ))}
+                </div>
+            </div>
+        ))}
+    </div>
+</div>

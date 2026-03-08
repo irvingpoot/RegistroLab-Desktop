@@ -1,0 +1,71 @@
+---
+
+/**
+ * @component InputNumber
+ * @description Campo numérico reutilizable con estilos y etiquetas integradas.
+ * * CARACTERÍSTICAS:
+ * - Soporta temas de color (blue, emerald, purple) para adaptarse al contexto (Cuestionarios vs Admin).
+ * - Acepta atributos HTML nativos como min, max, step y required.
+ * * PROPS PRINCIPALES:
+ * @prop {string} label - Etiqueta visible para el usuario.
+ * @prop {string} name - Nombre del campo para el FormData.
+ * @prop {string} [color='blue'] - Tema de color para el borde y el foco ('blue' | 'emerald' | 'purple').
+ */
+
+interface Props {
+    label: string;
+    subLabel?: string;
+    name: string;
+    placeholder?: string;
+    required?: boolean;
+    min?: number;
+    max?: number;
+    step?: number;
+    // 1. Agregamos prop
+    color?: 'blue' | 'purple' | 'emerald';
+}
+
+const { 
+    label, 
+    subLabel,
+    name, 
+    placeholder = "0", 
+    required = false,
+    min,
+    max,
+    step,
+    color = 'blue' // Default
+} = Astro.props;
+
+// 2. Mapa de clases para el texto
+const textColors = {
+    blue: "text-blue-600",
+    purple: "text-purple-600",
+    emerald: "text-emerald-600"
+};
+
+const textColorClass = textColors[color] || textColors.blue;
+---
+
+<div class="flex flex-col w-full mb-4">
+    <label for={name} class="mb-2 text-lg font-medium text-gray-900">
+        {label} {required && <span class="text-red-600">*</span>}
+    </label>
+
+    {/* Usamos la clase dinámica */}
+    {subLabel && (
+        <p class={`text-md italic mb-3 ${textColorClass}`}>{subLabel}</p>
+    )}
+
+    <input
+        type="number"
+        id={name}
+        name={name}
+        placeholder={placeholder}
+        required={required}
+        min={min}
+        max={max}
+        step={step}
+        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-2 focus:ring-gray-200 focus:border-gray-800 block w-full p-2.5 outline-none transition-colors"
+    />
+</div>

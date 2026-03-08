@@ -1,0 +1,80 @@
+---
+
+/**
+ * @component RadioGroup
+ * @description Conjunto de botones de radio para selección única (Mutuamente Excluyentes).
+ * * CASO DE USO:
+ * - Preguntas cerradas (Sí/No), selección de Género, o escalas simples no matriciales.
+ * * ACCESIBILIDAD:
+ * - Genera IDs únicos para cada opción vinculando correctamente el `<label>` con su `<input>`,
+ * permitiendo seleccionar la opción al hacer clic en el texto.
+ * * PROPS:
+ * @prop {string} label - Título o pregunta del grupo.
+ * @prop {string} name - Nombre del campo para el formulario (agrupa los radios).
+ * @prop {Array} options - Lista de opciones. Puede ser un array de strings o de objetos {value, label}.
+ * @prop {string} [value] - Valor pre-seleccionado (útil para formularios de edición).
+ */
+
+interface Option {
+    label: string;
+    value: string | number;
+}
+
+interface Props {
+    name: string;
+    label: string;
+    options: Option[];
+    required?: boolean;
+    errorMessage?: string;
+    columns?: 1 | 2 | 3 | 4; 
+}
+
+const { 
+    name, 
+    label, 
+    options, 
+    required = false, 
+    errorMessage,
+    columns = 1
+} = Astro.props;
+
+const gridClass = {
+    1: "grid-cols-1 gap-y-4",
+    2: "grid-cols-1 sm:grid-cols-2 gap-4",
+    3: "grid-cols-1 sm:grid-cols-3 gap-4",
+    4: "grid-cols-2 sm:grid-cols-4 gap-4",
+}[columns];
+---
+
+    <div class="mb-8">
+    <p class="block mb-4 text-lg font-medium text-gray-900">
+        {label} {required && <span class="text-red-600">*</span>}
+    </p>
+
+    <div class={`grid ${gridClass} w-full`}>
+        {options.map((option) => (
+        <label class="flex items-center cursor-pointer group p-1">
+            
+            {/* Radio Input */}
+            <div class="relative flex items-center justify-center shrink-0">
+            <input 
+                type="radio" 
+                name={name} 
+                value={option.value} 
+                required={required}
+                class="w-6 h-6"
+            />
+            </div>
+
+            {/* Texto */}
+            <span class="ml-3 text-base text-gray-700 group-hover:text-gray-900 select-none leading-tight">
+            {option.label}
+            </span>
+        </label>
+        ))}
+    </div>
+
+    {errorMessage && (
+        <p class="mt-2 text-sm text-red-600">{errorMessage}</p>
+    )}
+</div>
