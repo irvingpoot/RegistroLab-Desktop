@@ -1,4 +1,4 @@
-# 📘 RegistroLab
+# 📘 RegistroLab - Desktop Version
 
 **RegistroLab** es una aplicación web diseñada para la **gestión de usuarios y registros**, construida con tecnologías modernas como [Astro](https://astro.build/), [TailwindCSS](https://tailwindcss.com/) y [Clerk](https://clerk.com/). Su objetivo es ofrecer una base sólida para proyectos que requieran autenticación, diseño adaptable y despliegue eficiente.
 
