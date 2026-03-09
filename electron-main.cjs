@@ -15,7 +15,6 @@ if (!gotTheLock) {
             if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.focus();
             
-            // (Opcional) Aquí podrías leer la URL para navegar a una página específica
             // La URL viene dentro de 'commandLine' en Windows
             // const url = commandLine.find(arg => arg.startsWith('labsomno://'));
             // console.log("Abierto desde URL:", url);

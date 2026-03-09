@@ -65,6 +65,8 @@
 
 ```bash
 npm install -g pnpm
+
+node node_modules/electron/install.js
 ```
 
 ### Instalación
