@@ -1,7 +1,7 @@
 // electron-main.cjs
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { fork } = require('child_process');
 
 let mainWindow;
 let astroServer;
@@ -65,9 +65,9 @@ async function createWindow() {
         
         console.log("Iniciando servidor en puerto:", PROD_PORT);
 
-        astroServer = spawn('node', [serverPath], {
+        astroServer = fork(serverPath, [], {
             env: { ...process.env, PORT: PROD_PORT, HOST: '127.0.0.1' },
-            windowsHide: true
+            stdio: 'ignore'
         });
 
         setTimeout(() => {
