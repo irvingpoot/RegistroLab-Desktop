@@ -48,6 +48,12 @@
       "package.json",
       "node_modules/**/*"
     ],
+    "protocols": [
+      {
+        "name": "Lab Somno Protocol",
+        "schemes": ["labsomno"]
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "public/logo.png" 

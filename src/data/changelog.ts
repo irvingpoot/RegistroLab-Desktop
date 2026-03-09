@@ -1,23 +1,23 @@
-export const currentVersion = "2.5.2";
+export const currentVersion = "1.0.0";
 
 export const isMajorUpdate = true;
 
-export const updateDate = "23 de Febrero del 2026";
+export const updateDate = "09 de Marzo del 2026";
 
 export const changes = [
     {
-        title: "Reporte de poligrafía",
-        description: "Se agregó una sección para guardar los datos del reporte de poligrafía.",
+        title: "Lanzamiento App de Escritorio",
+        description: "Se habilita la versión instalable para Windows como alternativa de alto rendimiento para procesos pesados y respaldo operativo.",
         type: "feature"
     },
     {
-        title: "Mensaje copy-paste",
-        description: "Se agregó un botón para copiar un mensaje con todos los formularios.",
-        type: "feature"
+        title: "Acceso Local Optimizado",
+        description: "La versión de escritorio incluye un selector de perfiles exclusivo que permite operar con mayor estabilidad ante fallos de internet.",
+        type: "improvement"
     },
     {
-        title: "¿Dónde duerme?",
-        description: "Se corrigió un detalle en el que el campo no era obligatorio.",
-        type: "fix"
+        title: "Persistencia de Sesión",
+        description: "El sistema ahora recuerda al usuario por 7 días sin necesidad de volver a elegir perfil.",
+        type: "feature"
     }
 ];

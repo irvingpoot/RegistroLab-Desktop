@@ -1,80 +1,188 @@
 # 📘 RegistroLab - Desktop Version
 
-**RegistroLab** es una aplicación web diseñada para la **gestión de usuarios y registros**, construida con tecnologías modernas como [Astro](https://astro.build/), [TailwindCSS](https://tailwindcss.com/) y [Clerk](https://clerk.com/). Su objetivo es ofrecer una base sólida para proyectos que requieran autenticación, diseño adaptable y despliegue eficiente.
+<img src="https://astro.build/assets/press/astro-icon-light.png" width="80" alt="RegistroLab Desktop Logo" />
 
----
+# 🖥️ RegistroLab — Desktop
 
-## 🚀 Tecnologías principales
+**Sistema de Gestión Lab-Somno · Aplicación de escritorio**
 
-<div align="center">
-  <img src="https://astro.build/assets/press/astro-icon-light.png" alt="Astro" width="60"/>&nbsp;&nbsp;
-  <img src="https://cdn.worldvectorlogo.com/logos/tailwindcss.svg" alt="TailwindCSS" width="60"/>&nbsp;&nbsp;
-  <img src="https://avatars.githubusercontent.com/u/63343630?s=200&v=4" alt="Clerk" width="60"/>
+[![Astro](https://img.shields.io/badge/Astro-FF5D01?style=for-the-badge&logo=astro&logoColor=white)](https://astro.build/)
+[![Electron](https://img.shields.io/badge/Electron-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-F69220?style=for-the-badge&logo=pnpm&logoColor=white)](https://pnpm.io/)
+
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows)](https://github.com/irvingpoot/RegistroLab)
+[![Version](https://img.shields.io/badge/version-0.0.1-informational?style=flat-square)](package.json)
+[![Web version](https://img.shields.io/badge/🌐_versión_web-RegistroLab-purple?style=flat-square)](https://github.com/irvingpoot/RegistroLab)
+
+[🐛 Reportar bug](https://github.com/irvingpoot/RegistroLab/issues) · [💡 Solicitar feature](https://github.com/irvingpoot/RegistroLab/issues)
+
 </div>
 
-- **[Astro](https://astro.build/):** Framework de frontend rápido y flexible.
-- **[TailwindCSS](https://tailwindcss.com/):** Sistema de estilos utilitarios para interfaces modernas.
-- **[Clerk](https://clerk.com/):** Autenticación y gestión de usuarios.
-- **[Node.js](https://nodejs.org/):** Entorno de ejecución para JavaScript.
-- **[pnpm](https://pnpm.io/):** Gestor de paquetes ligero y eficiente.
+---
+
+## 📖 Descripción
+
+**RegistroLab Desktop** es la versión de escritorio del Sistema de Gestión Lab-Somno, construida con **Electron** + **Astro**. Empaqueta la interfaz web en una aplicación nativa para Windows, permitiendo su uso sin necesidad de un navegador y con acceso directo desde el escritorio.
+
+> Esta versión comparte el mismo stack frontend que la [versión web](https://github.com/irvingpoot/RegistroLab), pero corre localmente como app instalable gracias a Electron.
 
 ---
 
-## 📦 Instalación y configuración
+## ✨ Características
 
-1. **Clonar el repositorio**:
-   ```sh
-   git clone <url-del-repo>
-   cd RegistroLab
-   ```
-
-2. **Instalar dependencias**:
-   ```sh
-   pnpm install
-   ```
-
-3. **Configurar variables de entorno**:
-   Crear un archivo `.env` en la raíz del proyecto con las claves de Clerk:
-   ```env
-   PUBLIC_CLERK_PUBLISHABLE_KEY=tu_publishable_key
-   CLERK_SECRET_KEY=tu_secret_key
-   ```
+- 🖥️ **App nativa para Windows** empaquetada con Electron Builder
+- ⚡ **Interfaz web embebida** con Astro para máximo rendimiento
+- 🗄️ **Base de datos en la nube** conectada a Supabase (PostgreSQL)
+- 🎨 **UI moderna y responsiva** con TailwindCSS
+- 📦 **Instalador NSIS** con acceso directo en escritorio
+- 🔧 **Modo desarrollo** con hot-reload simultáneo (Astro + Electron)
 
 ---
 
-## 🛠️ Scripts disponibles
-Estos son los comandos definidos en `package.json`:
+## 🛠️ Stack tecnológico
 
-- `pnpm dev` → Inicia el servidor de desarrollo.
-- `pnpm build` → Genera la compilación para producción.
-- `pnpm preview` → Ejecuta una vista previa de la compilación.
-- `pnpm astro` → Acceso directo a scripts de Astro.
+| Tecnología | Uso |
+|---|---|
+| [Electron](https://www.electronjs.org/) | Empaquetado como app de escritorio |
+| [Astro](https://astro.build/) | Framework principal de frontend |
+| [TailwindCSS](https://tailwindcss.com/) | Estilos utilitarios y diseño |
+| [Supabase](https://supabase.com/) | Base de datos y backend (PostgreSQL) |
+| [TypeScript](https://www.typescriptlang.org/) | Tipado estático |
+| [pnpm](https://pnpm.io/) | Gestor de paquetes |
+| [electron-builder](https://www.electron.build/) | Generación del instalador `.exe` |
+
+---
+
+## 🚀 Inicio rápido
+
+### Prerrequisitos
+
+- **Node.js** `>= 18`
+- **pnpm** instalado globalmente
+
+```bash
+npm install -g pnpm
+
+node node_modules/electron/install.js
+```
+
+### Instalación
+
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/irvingpoot/RegistroLab-Desktop.git
+cd RegistroLab-Desktop
+
+# 2. Instalar dependencias
+pnpm install
+
+# 3. Configurar variables de entorno
+cp .env.example .env
+```
+
+### Variables de entorno
+
+Crea un archivo `.env` en la raíz del proyecto con las claves de Supabase (obtenidas desde el [dashboard de Supabase](https://supabase.com/dashboard)):
+
+```env
+PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+PUBLIC_SUPABASE_ANON_KEY=eyJ...
+```
+
+---
+
+## 📜 Scripts disponibles
+
+```bash
+# Desarrollo web (solo Astro, en el navegador)
+pnpm dev
+
+# Desarrollo desktop (Astro + Electron con hot-reload)
+pnpm electron:dev
+
+# Vista previa del build web
+pnpm preview
+
+# Compilar la app (Astro build + Electron)
+pnpm electron:build
+
+# Generar instalador .exe para distribución
+pnpm dist
+```
+
+> 💡 Para desarrollo activo de la app de escritorio, usa siempre `pnpm electron:dev`.
+
+---
+
+## 📦 Generar instalador
+
+Para distribuir la aplicación como instalador `.exe`:
+
+```bash
+pnpm dist
+```
+
+El instalador se generará en la carpeta `release/`. Configuración del build:
+
+- **AppId:** `com.labsomno.app`
+- **Nombre:** `Lab Somno Desktop`
+- **Target:** NSIS (instalador con asistente)
+- **Acceso directo:** Se crea automáticamente en el escritorio
 
 ---
 
 ## 📂 Estructura del proyecto
 
-```sh
-/
-├── public/          # Archivos estáticos
+```
+RegistroLab-Desktop/
+├── public/                 # Archivos estáticos
 ├── src/
-│   ├── assets/      # Recursos (imágenes, íconos, etc.)
-│   ├── components/  # Componentes reutilizables
-│   ├── layouts/     # Plantillas de diseño
-│   └── pages/       # Páginas del sitio
-├── .env             # Variables de entorno
-├── package.json     # Dependencias y scripts
-├── astro.config.mjs # Configuración de Astro
-├── tailwind.config.js # Configuración de TailwindCSS
-└── tsconfig.json    # Configuración de TypeScript
+│   ├── assets/             # Recursos (imágenes, íconos, fuentes)
+│   ├── components/         # Componentes reutilizables de UI
+│   ├── layouts/            # Plantillas base de las páginas
+│   └── pages/              # Rutas y páginas del sitio
+├── electron-main.cjs       # Proceso principal de Electron
+├── .env                    # Variables de entorno (no commitear)
+├── astro.config.mjs        # Configuración de Astro
+├── tailwind.config.js      # Configuración de TailwindCSS
+├── tsconfig.json           # Configuración de TypeScript
+└── package.json            # Dependencias y scripts
 ```
 
 ---
 
-## 📌 Notas adicionales
-- Asegúrate de tener instalado **Node.js** (versión recomendada ≥ 18).
-- Se recomienda usar **pnpm** para mayor compatibilidad con el proyecto.
-- Clerk requiere claves válidas para funcionar correctamente.
+## 🔗 Versiones del proyecto
+
+| Versión | Repositorio | Descripción |
+|---|---|---|
+| 🌐 Web | [RegistroLab](https://github.com/irvingpoot/RegistroLab) | Desplegada en Vercel |
+| 🖥️ Desktop | Este repositorio | App instalable para Windows |
 
 ---
 
+## 🤝 Contribuciones
+
+¡Las contribuciones son bienvenidas! Si tienes ideas o encuentras algún bug:
+
+1. Haz **fork** del repositorio
+2. Crea una rama: `git checkout -b feature/mi-nueva-feature`
+3. Commitea tus cambios: `git commit -m 'feat: agrega nueva feature'`
+4. Haz push: `git push origin feature/mi-nueva-feature`
+5. Abre un **Pull Request**
+
+---
+
+## 👤 Autor
+
+**Irving Poot**
+
+[![GitHub](https://img.shields.io/badge/GitHub-@irvingpoot-181717?style=flat-square&logo=github)](https://github.com/irvingpoot)
+
+---
+
+<div align="center">
+  <sub>Hecho con ❤️ usando Astro + Electron + TailwindCSS + Supabase</sub>
+</div>
