@@ -1,4 +1,4 @@
-<div align="center">
+# 📘 RegistroLab - Desktop Version
 
 <img src="https://astro.build/assets/press/astro-icon-light.png" width="80" alt="RegistroLab Desktop Logo" />
 
