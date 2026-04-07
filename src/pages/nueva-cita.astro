@@ -54,17 +54,25 @@ if (Astro.request.method === "POST") {
         const fechaLocal = data.get("fecha_hora") as string;
         const fechaObj = new Date(`${fechaLocal}-06:00`);
         const fechaISO = fechaObj.toISOString();
+
+        const fechaSoloDia = fechaLocal.split('T')[0];
+        const { data: diaBloqueado } = await supabase
+            .from('dias_inhabiles')
+            .select('fecha')
+            .eq('fecha', fechaSoloDia)
+            .maybeSingle();
+
+        if (diaBloqueado) {
+            throw new Error(`⚠️ El día seleccionado (${fechaSoloDia}) está bloqueado como inhábil. Elige otra fecha.`);
+        }
         
-        // 1. Capturar quién atiende
         const atendidoPor = data.get("atendido_por") as string; 
 
-        // 2. Validación:
-        // Buscamos si YA existe una cita a esa hora CON EL MISMO especialista.
         const { data: citaExistente } = await supabase
             .from('citas')
             .select('id')
             .eq('fecha_hora', fechaISO)
-            .eq('atendido_por', atendidoPor) // Solo choca si es el mismo psic
+            .eq('atendido_por', atendidoPor)
             .neq('estado', 'cancelada') 
             .maybeSingle();
 
@@ -98,6 +106,12 @@ if (Astro.request.method === "POST") {
         mensaje = e instanceof Error ? e.message : "Ocurrió un error desconocido";
     }
 }
+
+const { data: inhabilesData } = await supabase
+    .from('dias_inhabiles')
+    .select('fecha')
+    .gte('fecha', new Date().toISOString().split('T')[0]);
+const listaInhabiles = inhabilesData?.map(d => d.fecha) || [];
 ---
 
 <Layout title="Agendar Nueva Cita | Lab-Somno">
@@ -253,6 +267,22 @@ if (Astro.request.method === "POST") {
             </div>
         </form>
     </main>
+
+    <dialog id="modal-error-fecha" class="m-auto bg-gray-900 border border-gray-700 rounded-3xl shadow-2xl backdrop:backdrop-blur-xl w-full max-w-sm text-center p-0 overflow-hidden outline-none">
+        <div class="p-6">
+            <div class="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-900/30 border border-red-500/30 mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-7 w-7 text-red-500">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+            </div>
+            <h3 class="text-xl font-extrabold text-white mb-2">Día Inhábil</h3>
+            <p class="text-gray-400 text-sm mb-6">Este día está marcado como inhábil o vacacional. Por favor, selecciona otro día para la cita.</p>
+            
+            <button onclick="document.getElementById('modal-error-fecha').close()" type="button" class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-xl border border-gray-700 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500">
+                Entendido
+            </button>
+        </div>
+    </dialog>
 </Layout>
 
 <style>
@@ -371,3 +401,21 @@ if (Astro.request.method === "POST") {
         100% { width: 47px; right: 8px; top: 38px; }
     }
 </style>
+
+<script define:vars={{ listaInhabiles }}>
+    document.addEventListener("DOMContentLoaded", () => {
+        const inputFecha = document.getElementById('fecha_hora');
+        
+        if (inputFecha) {
+            inputFecha.addEventListener('change', (e) => {
+                const fechaSeleccionada = e.target.value.split('T')[0];
+                
+                if (listaInhabiles.includes(fechaSeleccionada)) {
+                    document.getElementById('modal-error-fecha').showModal();
+                    
+                    e.target.value = ''; 
+                }
+            });
+        }
+    });
+</script>

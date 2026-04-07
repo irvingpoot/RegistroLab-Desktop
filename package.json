@@ -18,6 +18,7 @@
     "@supabase/supabase-js": "^2.84.0",
     "@tailwindcss/vite": "^4.1.13",
     "astro": "^5.13.7",
+    "pdf-lib": "^1.17.1",
     "tailwindcss": "^4.1.13"
   },
   "pnpm": {
@@ -50,12 +51,14 @@
     "protocols": [
       {
         "name": "Lab Somno Protocol",
-        "schemes": ["labsomno"]
+        "schemes": [
+          "labsomno"
+        ]
       }
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/logo.png" 
+      "icon": "public/logo.png"
     },
     "nsis": {
       "oneClick": false,
@@ -63,7 +66,7 @@
       "shortcutName": "Lab Somno"
     },
     "asarUnpack": [
-      "dist/**/*" 
+      "dist/**/*"
     ]
   }
 }
