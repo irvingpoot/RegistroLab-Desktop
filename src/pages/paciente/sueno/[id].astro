@@ -243,10 +243,8 @@ if (Astro.request.method === "POST") {
 
             if (archivo && archivo instanceof File && archivo.size > 0) {
                 
-                // Ruta del archivo
                 const filePath = `${id}/consentimiento_tms.pdf`;
 
-                // 1. Subir a Supabase (Bucket PRIVADO)
                 const { error: uploadError } = await supabase.storage
                     .from('expedientes')
                     .upload(filePath, archivo, {
@@ -267,40 +265,64 @@ if (Astro.request.method === "POST") {
             }
         }
 
-        if (action === "registrar_reporte") {
+        if (action === "registrar_reporte" || action === "editar_noche") {
             const getNum = (k: string) => { 
                 const v = formData.get(k) as string;
                 return v && v.toString().trim() !== '' ? parseFloat(v) : null; 
             };
             
-            // Construir strings de tiempo
-            const durReg = `${formData.get("dur_reg_h") || 0}h ${formData.get("dur_reg_m") || 0}m`;
+            const durReg  = `${formData.get("dur_reg_h")  || 0}h ${formData.get("dur_reg_m")  || 0}m`;
             const durEval = `${formData.get("dur_eval_h") || 0}h ${formData.get("dur_eval_m") || 0}m`;
 
-            const reporteData = {
-                paciente_id: id, // El ID que viene de la URL
-                duracion_registro: durReg,
+            const camposNoche = {
+                duracion_registro:   durReg,
                 duracion_evaluacion: durEval,
-                iah: getNum("iah"),
-                indice_apneas: getNum("indice_apneas"),
-                indice_hipopnea: getNum("indice_hipopnea"),
-                iai: getNum("iai"),
-                iao: getNum("iao"),
-                iac: getNum("iac"),
-                iam: getNum("iam"),
+                iah:                 getNum("iah"),
+                indice_apneas:       getNum("indice_apneas"),
+                indice_hipopnea:     getNum("indice_hipopnea"),
+                iai:                 getNum("iai"),
+                iao:                 getNum("iao"),
+                iac:                 getNum("iac"),
+                iam:                 getNum("iam"),
+                ido:                 getNum("ido"),
                 saturacion_promedio: getNum("saturacion_promedio"),
-                pulso_promedio: getNum("pulso_promedio"),
-                ronquidos: getNum("ronquidos"),
-                sat_90_min: getNum("sat_90_min"),
-                sat_90_porc: getNum("sat_90_porc")
+                pulso_promedio:      getNum("pulso_promedio"),
+                ronquidos:           getNum("ronquidos"),
+                sat_90_min:          getNum("sat_90_min"),
+                sat_90_porc:         getNum("sat_90_porc"),
+                sat_85_min:          getNum("sat_85_min"),
+                sat_85_porc:         getNum("sat_85_porc"),
             };
 
-            // Estrategia: Borrar anterior e insertar nuevo (para evitar duplicados simples)
-            await supabase.from('pacientes_reportes_sueno').delete().eq('paciente_id', id);
-            const { error } = await supabase.from('pacientes_reportes_sueno').insert(reporteData);
+            if (action === "registrar_reporte") {
+                const { error } = await supabase
+                    .from('pacientes_reportes_sueno')
+                    .insert({ paciente_id: id, ...camposNoche });
 
-            if (error) console.error("Error guardando reporte:", error);
-            else return Astro.redirect(`${Astro.url.pathname}?mensaje=reporte_guardado`);
+                if (error) console.error("Error guardando noche:", error);
+                else return Astro.redirect(`${Astro.url.pathname}?mensaje=reporte_guardado`);
+
+            } else {
+                const idNoche = formData.get("id_noche") as string;
+                const { error } = await supabase
+                    .from('pacientes_reportes_sueno')
+                    .update(camposNoche)
+                    .eq('id', idNoche);
+
+                if (error) console.error("Error editando noche:", error);
+                else return Astro.redirect(`${Astro.url.pathname}?mensaje=reporte_guardado`);
+            }
+        }
+
+        if (action === "eliminar_noche") {
+            const idNoche = formData.get("id_noche") as string;
+            const { error } = await supabase
+                .from('pacientes_reportes_sueno')
+                .delete()
+                .eq('id', idNoche);
+
+            if (error) console.error("Error eliminando noche:", error);
+            else return Astro.redirect(`${Astro.url.pathname}`);
         }
 
     } catch (error) {
@@ -308,7 +330,6 @@ if (Astro.request.method === "POST") {
     }
 }
 
-// --- 2. CONSULTA DE DATOS ---
 const { data: paciente, error } = await supabase
     .from('pacientes')
     .select('*, pacientes_sintomas(*), pacientes_puntajes_extra(*), pacientes_seguimiento(*), respuestas_cuestionarios(*), tms_sesiones(*), pacientes_reportes_sueno(*)')
@@ -334,9 +355,26 @@ if (paciente?.tms_consentimiento_url) {
     urlConsentimientoFirmado = signedData?.signedUrl;
 }
 
-const reporteResultados = paciente?.pacientes_reportes_sueno?.[0] || null;
+const baseUrl = Astro.url.origin;
+const token = paciente.token_cuestionarios;
 
-// Helper para extraer "7" y "30" de "7h 30m"
+const linkPsqi = `${baseUrl}/cuestionarios/psqi/${token}?fase=pre`;
+const linkBerlin = `${baseUrl}/cuestionarios/berlin/${token}?fase=pre`;
+const linkEpworth = `${baseUrl}/cuestionarios/epworth/${token}?fase=pre`;
+
+const mensajeWhatsApp = `Buen día. Soy ${nombreAutor}, del laboratorio del sueño y neurociencias de la UADY. Estos son los formularios para complementar el estudio de Apnea. Si tiene oportunidad de contestarlo con alguien más, por si hay algún dato que desconoce y alguien más pueda ayudarlo a responder.
+
+Aquí le dejo los links:
+
+Indice de calidad de sueño de pitsburgh:
+${linkPsqi}
+
+Cuestionario Berlin:
+${linkBerlin}
+
+Escala Epworth de somnolencia:
+${linkEpworth}`;
+
 const extraerTiempo = (texto: string | null) => {
     if (!texto) return { h: '', m: '' };
     const match = texto.match(/(\d+)h\s*(\d+)m/);
@@ -344,8 +382,53 @@ const extraerTiempo = (texto: string | null) => {
     return { h: '', m: '' };
 };
 
-const regTiempo = extraerTiempo(reporteResultados?.duracion_registro);
-const evalTiempo = extraerTiempo(reporteResultados?.duracion_evaluacion);
+const reportesNoches: any[] = (paciente?.pacientes_reportes_sueno || [])
+    .slice()
+    .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+const totalNoches = reportesNoches.length;
+
+const promedioN = (campo: string): number | null => {
+    const valores = reportesNoches
+        .map((n: any) => n[campo])
+        .filter((v: any) => v !== null && v !== undefined && !isNaN(v));
+    if (valores.length === 0) return null;
+    const suma = valores.reduce((acc: number, v: number) => acc + Number(v), 0);
+    return Math.round((suma / valores.length) * 10) / 10;
+};
+
+const promedioDuracion = (campo: string): string | null => {
+    const minutos = reportesNoches
+        .map((n: any) => {
+            const t = extraerTiempo(n[campo]);
+            if (!t.h && !t.m) return null;
+            return parseInt(t.h || '0') * 60 + parseInt(t.m || '0');
+        })
+        .filter((v): v is number => v !== null);
+    if (minutos.length === 0) return null;
+    const avg = minutos.reduce((a, b) => a + b, 0) / minutos.length;
+    return `${Math.floor(avg / 60)}h ${Math.round(avg % 60)}m`;
+};
+
+const promedios = totalNoches > 0 ? {
+    duracion_registro:   promedioDuracion('duracion_registro'),
+    duracion_evaluacion: promedioDuracion('duracion_evaluacion'),
+    iah:                 promedioN('iah'),
+    indice_apneas:       promedioN('indice_apneas'),
+    indice_hipopnea:     promedioN('indice_hipopnea'),
+    iai:                 promedioN('iai'),
+    iao:                 promedioN('iao'),
+    iac:                 promedioN('iac'),
+    iam:                 promedioN('iam'),
+    ido:                 promedioN('ido'),
+    saturacion_promedio: promedioN('saturacion_promedio'),
+    pulso_promedio:      promedioN('pulso_promedio'),
+    ronquidos:           promedioN('ronquidos'),
+    sat_90_min:          promedioN('sat_90_min'),
+    sat_90_porc:         promedioN('sat_90_porc'),
+    sat_85_min:          promedioN('sat_85_min'),
+    sat_85_porc:         promedioN('sat_85_porc'),
+} : null;
 
 const formatDate = (dateString: string) => {
     if (!dateString) return "No registrado";
@@ -434,6 +517,7 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                     <a href="#puntajes" class="nav-link">Puntajes</a>
                     <a href="#reporte-resultados" class="nav-link">Resultados</a>
                     <a href="#tms" class="nav-link">TMS</a>
+                    <a href="#evaluacion" class="nav-link">Evaluaciones</a>
                     <a href="#seguimiento" class="nav-link">Seguimiento</a>
                 </div>
             </nav>
@@ -452,7 +536,6 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                                     class="value font-mono text-blue-300 hover:text-green-400 hover:underline flex items-center gap-2 w-fit transition-colors group"
                                     title="Enviar mensaje de WhatsApp"
                                 >
-                                    {/* Icono WhatsApp */}
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-whatsapp transition-transform group-hover:scale-110" viewBox="0 0 16 16">
                                         <path d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.898 7.898 0 0 0 13.6 2.326zM7.994 14.521a6.573 6.573 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.557 6.557 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592zm3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.729.729 0 0 0-.529.247c-.182.198-.691.677-.691 1.654 0 .977.71 1.916.81 2.049.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"/>
                                     </svg>
@@ -670,95 +753,177 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
 
             <section id="reporte-resultados" class="mb-10 animate-fade-in-up delay-100">
                 <InfoCard title="Reporte de Resultados">
-                    <div class="flex items-center justify-between mb-4">
-                        <p class="text-lg font-bold text-gray-400 flex items-center gap-2">
-                            Resultados del reporte del estudio de poligrafía del sueño.
+                    <div class="flex items-center justify-between mb-6">
+                        <p class="text-sm text-gray-400">
+                            Resultados del estudio de poligrafía del sueño.
+                            {totalNoches > 0 && <span class="ml-2 text-blue-400 font-bold">{totalNoches} {totalNoches === 1 ? 'noche registrada' : 'noches registradas'}</span>}
                         </p>
-                        
-                        <button onclick="document.getElementById('modal-resultados').showModal()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                            {reporteResultados ? 'Editar Resultados' : 'Registrar Resultados'}
+                        <button onclick="abrirModalNoche()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                            Agregar Noche
                         </button>
                     </div>
 
-                    <div class="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm">
-                        {reporteResultados ? (
-                            <div class="space-y-6">
-                                <div class="grid grid-cols-2 gap-4 bg-gray-800/40 p-4 rounded-xl border border-gray-700/50">
-                                    <div class="text-center">
-                                        <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Duración Registro</span>
-                                        <p class="text-xl text-white font-mono mt-1">{reporteResultados.duracion_registro}</p>
+                    {totalNoches > 0 ? (
+                        <div class="space-y-4">
+
+                            <div class="overflow-x-auto rounded-xl border border-gray-800">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-800/60">
+                                        <tr class="text-xs text-gray-500 uppercase tracking-wider">
+                                            <th class="px-4 py-3 text-left font-bold">Noche</th>
+                                            <th class="px-4 py-3 text-left font-bold">Fecha</th>
+                                            <th class="px-4 py-3 text-center font-bold text-indigo-400">IAH</th>
+                                            <th class="px-4 py-3 text-center font-bold text-emerald-400">Sat. Prom.</th>
+                                            <th class="px-4 py-3 text-center font-bold text-rose-400">Pulso</th>
+                                            <th class="px-4 py-3 text-center font-bold">Dur. Reg.</th>
+                                            <th class="px-4 py-3 text-center font-bold w-20">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-800/50">
+                                        {reportesNoches.map((noche: any, idx: number) => (
+                                            <tr
+                                                class="hover:bg-white/[0.03] transition-colors cursor-pointer group"
+                                                onclick={`abrirDetalleNoche(${noche.id})`}
+                                            >
+                                                <td class="px-4 py-3">
+                                                    <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold text-xs">
+                                                        {idx + 1}
+                                                    </span>
+                                                </td>
+                                                <td class="px-4 py-3 text-gray-400 font-mono text-xs">
+                                                    {formatDateShort(noche.created_at)}
+                                                </td>
+                                                <td class="px-4 py-3 text-center font-bold text-white font-mono">
+                                                    {noche.iah ?? <span class="text-gray-600">—</span>}
+                                                </td>
+                                                <td class="px-4 py-3 text-center font-mono text-gray-300">
+                                                    {noche.saturacion_promedio != null ? `${noche.saturacion_promedio}%` : <span class="text-gray-600">—</span>}
+                                                </td>
+                                                <td class="px-4 py-3 text-center font-mono text-gray-300">
+                                                    {noche.pulso_promedio != null ? `${noche.pulso_promedio}` : <span class="text-gray-600">—</span>}
+                                                </td>
+                                                <td class="px-4 py-3 text-center font-mono text-gray-400 text-xs">
+                                                    {noche.duracion_registro ?? <span class="text-gray-600">—</span>}
+                                                </td>
+                                                <td class="px-4 py-3">
+                                                    <div class="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            type="button"
+                                                            title="Editar noche"
+                                                            onclick={`event.stopPropagation(); abrirModalNoche(${noche.id})`}
+                                                            class="text-gray-500 hover:text-blue-400 transition-colors cursor-pointer"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            title="Eliminar noche"
+                                                            onclick={`event.stopPropagation(); confirmarEliminarNoche(${noche.id}, ${idx + 1})`}
+                                                            class="text-gray-500 hover:text-red-400 transition-colors cursor-pointer"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-5">
+                                <div class="flex items-center gap-2 mb-4">
+                                    <div class="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_6px_rgba(96,165,250,0.8)]"></div>
+                                    <h4 class="text-sm font-bold text-blue-300 uppercase tracking-wider">
+                                        Promedio de {totalNoches} {totalNoches === 1 ? 'noche' : 'noches'}
+                                    </h4>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-3 mb-4">
+                                    <div class="text-center bg-gray-900/50 rounded-lg p-3 border border-gray-800">
+                                        <span class="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Dur. Registro</span>
+                                        <p class="text-lg text-white font-mono">{promedios?.duracion_registro ?? '—'}</p>
                                     </div>
-                                    <div class="text-center border-l border-gray-700/50">
-                                        <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Duración Evaluación</span>
-                                        <p class="text-xl text-white font-mono mt-1">{reporteResultados.duracion_evaluacion}</p>
+                                    <div class="text-center bg-gray-900/50 rounded-lg p-3 border border-gray-800 border-l border-l-gray-700/50">
+                                        <span class="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Dur. Evaluación</span>
+                                        <p class="text-lg text-white font-mono">{promedios?.duracion_evaluacion ?? '—'}</p>
                                     </div>
                                 </div>
 
                                 <div>
-                                    <h4 class="text-sm font-bold text-gray-400 mb-3 border-b border-gray-800 pb-1">Análisis Respiratorio</h4>
-                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <h5 class="text-xs font-bold text-gray-500 mb-3 border-b border-gray-800 pb-1 uppercase">Análisis Respiratorio</h5>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                                         <div class="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-lg text-center">
                                             <span class="text-xs text-indigo-300 font-bold block">IAH</span>
-                                            <span class="text-2xl font-bold text-white">{reporteResultados.iah}</span>
+                                            <span class="text-2xl font-bold text-white">{promedios?.iah ?? '—'}</span>
                                         </div>
-                                        <div class="bg-gray-800 p-3 rounded-lg text-center">
-                                            <span class="text-xs text-gray-400 block">Índice Apneas</span>
-                                            <span class="text-xl font-bold text-gray-200">{reporteResultados.indice_apneas}</span>
+                                        <div class="bg-gray-800/60 p-3 rounded-lg text-center">
+                                            <span class="text-xs text-gray-400 block">Índ. Apneas</span>
+                                            <span class="text-xl font-bold text-gray-200">{promedios?.indice_apneas ?? '—'}</span>
                                         </div>
-                                        <div class="bg-gray-800 p-3 rounded-lg text-center">
-                                            <span class="text-xs text-gray-400 block">Índice Hipopnea</span>
-                                            <span class="text-xl font-bold text-gray-200">{reporteResultados.indice_hipopnea}</span>
+                                        <div class="bg-gray-800/60 p-3 rounded-lg text-center">
+                                            <span class="text-xs text-gray-400 block">Índ. Hipopnea</span>
+                                            <span class="text-xl font-bold text-gray-200">{promedios?.indice_hipopnea ?? '—'}</span>
                                         </div>
-                                        <div class="bg-gray-800 p-3 rounded-lg text-center">
+                                        <div class="bg-gray-800/60 p-3 rounded-lg text-center">
                                             <span class="text-xs text-gray-400 block">Ronquidos</span>
-                                            <span class="text-xl font-bold text-gray-200">{reporteResultados.ronquidos}</span>
+                                            <span class="text-xl font-bold text-gray-200">{promedios?.ronquidos ?? '—'}</span>
                                         </div>
                                     </div>
-                                    
-                                    <div class="grid grid-cols-4 gap-2 mt-3 text-center">
-                                        <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IAI</span><span class="text-sm font-mono text-gray-300">{reporteResultados.iai}</span></div>
-                                        <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IAO</span><span class="text-sm font-mono text-gray-300">{reporteResultados.iao}</span></div>
-                                        <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IAC</span><span class="text-sm font-mono text-gray-300">{reporteResultados.iac}</span></div>
-                                        <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IAM</span><span class="text-sm font-mono text-gray-300">{reporteResultados.iam}</span></div>
+                                    <div class="grid grid-cols-5 gap-2 text-center">
+                                        <div class="bg-gray-800/30 rounded py-1.5"><span class="text-[10px] text-gray-500 block">IAI</span><span class="text-sm font-mono text-gray-300">{promedios?.iai ?? '—'}</span></div>
+                                        <div class="bg-gray-800/30 rounded py-1.5"><span class="text-[10px] text-gray-500 block">IAO</span><span class="text-sm font-mono text-gray-300">{promedios?.iao ?? '—'}</span></div>
+                                        <div class="bg-gray-800/30 rounded py-1.5"><span class="text-[10px] text-gray-500 block">IAC</span><span class="text-sm font-mono text-gray-300">{promedios?.iac ?? '—'}</span></div>
+                                        <div class="bg-gray-800/30 rounded py-1.5"><span class="text-[10px] text-gray-500 block">IAM</span><span class="text-sm font-mono text-gray-300">{promedios?.iam ?? '—'}</span></div>
+                                        <div class="bg-gray-800/30 rounded py-1.5"><span class="text-[10px] text-gray-500 block">IDO</span><span class="text-sm font-mono text-gray-300">{promedios?.ido ?? '—'}</span></div>
                                     </div>
                                 </div>
 
-                                <div>
-                                    <h4 class="text-sm font-bold text-gray-400 mb-3 border-b border-gray-800 pb-1">Oximetría y Pulso</h4>
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="mt-4">
+                                    <h5 class="text-xs font-bold text-gray-500 mb-3 border-b border-gray-800 pb-1 uppercase">Oximetría y Pulso</h5>
+                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                                         <div class="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-lg">
                                             <span class="text-xs text-emerald-400 font-bold">Sat. Promedio</span>
-                                            <span class="text-xl font-bold text-white">{reporteResultados.saturacion_promedio}%</span>
+                                            <span class="text-xl font-bold text-white">{promedios?.saturacion_promedio != null ? `${promedios.saturacion_promedio}%` : '—'}</span>
                                         </div>
                                         <div class="flex items-center justify-between bg-rose-500/5 border border-rose-500/10 p-3 rounded-lg">
                                             <span class="text-xs text-rose-400 font-bold">Pulso Promedio</span>
-                                            <span class="text-xl font-bold text-white">{reporteResultados.pulso_promedio} <span class="text-xs">bpm</span></span>
+                                            <span class="text-xl font-bold text-white">{promedios?.pulso_promedio != null ? `${promedios.pulso_promedio}` : '—'} <span class="text-xs text-gray-500">bpm</span></span>
                                         </div>
                                         <div class="flex flex-col justify-center bg-gray-800/50 p-2 rounded-lg text-center">
                                             <span class="text-[10px] text-gray-500 uppercase">Sat &lt; 90%</span>
                                             <div class="flex justify-center gap-3 text-sm font-mono">
-                                                <span class="text-white">{reporteResultados.sat_90_min} min</span>
+                                                <span class="text-white">{promedios?.sat_90_min != null ? `${promedios.sat_90_min} min` : '—'}</span>
                                                 <span class="text-gray-600">|</span>
-                                                <span class="text-white">{reporteResultados.sat_90_porc}%</span>
+                                                <span class="text-white">{promedios?.sat_90_porc != null ? `${promedios.sat_90_porc}%` : '—'}</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex flex-col justify-center bg-gray-800/50 p-2 rounded-lg text-center">
+                                            <span class="text-[10px] text-gray-500 uppercase">Sat &lt; 85%</span>
+                                            <div class="flex justify-center gap-3 text-sm font-mono">
+                                                <span class="text-white">{promedios?.sat_85_min != null ? `${promedios.sat_85_min} min` : '—'}</span>
+                                                <span class="text-gray-600">|</span>
+                                                <span class="text-white">{promedios?.sat_85_porc != null ? `${promedios.sat_85_porc}%` : '—'}</span>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        ) : (
-                            <div class="flex flex-col items-center justify-center py-8 text-center">
-                                <div class="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                </div>
-                                <p class="text-gray-400 font-medium">Sin resultados registrados</p>
-                                <p class="text-sm text-gray-600 mb-4">No hay datos de polismnografía o estudio simplificado.</p>
-                                <button onclick="document.getElementById('modal-resultados').showModal()" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors border border-gray-700">
-                                    Registrar ahora
-                                </button>
+
+                        </div>
+                    ) : (
+                        <div class="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-gray-800 rounded-2xl">
+                            <div class="w-14 h-14 bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                             </div>
-                        )}
-                    </div>
+                            <p class="text-gray-400 font-medium">Sin noches registradas</p>
+                            <p class="text-sm text-gray-600 mb-4">Aún no hay datos de poligrafía o estudio simplificado.</p>
+                            <button onclick="abrirModalNoche()" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors border border-gray-700">
+                                Registrar primera noche
+                            </button>
+                        </div>
+                    )}
                 </InfoCard>
             </section>
             
@@ -827,6 +992,96 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                 </InfoCard>
             </section>
 
+            <section id="evaluacion" class="scroll-mt-32">
+                <InfoCard title="Enlaces de evaluación remota">
+                    <div class="flex flex-col justify-between items-start gap-6 md:flex-row">
+                        <div class="mb-6">
+                            <p class="text-sm text-gray-400 mt-1">1. Selecciona la fase del tratamiento.</p>
+                            <p class="text-sm text-gray-400">2. Copia el enlace del cuestionario específico que deseas enviar.</p>
+                        </div>
+                        
+                        <div class="mb-6">
+                            <button onclick="document.getElementById('modal-copy-forms').showModal()" class="text-xs bg-green-600/20 text-green-400 hover:bg-green-600 hover:text-white border border-green-600/50 px-3 py-1.5 rounded-lg transition-all flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.305-.883-.653-1.48-1.459-1.653-1.756-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                                Copiar mensaje para el paciente
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 p-1 bg-gray-800 rounded-lg w-fit mb-6">
+                        <button onclick="setFase('pre')" id="btn-pre" class="px-4 py-1.5 rounded-md text-sm font-medium transition-all bg-blue-600 text-white shadow">Pre-Tratamiento</button>
+                        <button onclick="setFase('inter')" id="btn-inter" class="px-4 py-1.5 rounded-md text-sm font-medium transition-all text-gray-400 hover:text-white">Intermedio</button>
+                        <button onclick="setFase('post')" id="btn-post" class="px-4 py-1.5 rounded-md text-sm font-medium transition-all text-gray-400 hover:text-white">Post-Tratamiento</button>
+                    </div>
+    
+                    <div class="grid gap-3">
+                        
+                        <div class="bg-black/40 p-2 pr-3 rounded-lg border border-gray-700/50 group hover:border-blue-500/50 transition-colors" id="row-epworth">
+                            <div class="flex items-center gap-2">
+                                <div class="bg-blue-900/20 text-blue-400 px-3 py-2 rounded font-bold text-xs uppercase tracking-wider min-w-[100px] text-center">Epworth</div>
+                                
+                                <div class="container-link flex items-center gap-2 w-full">
+                                    <input type="text" readonly id="link-epworth" class="bg-transparent border-none text-gray-500 text-xs w-full focus:ring-0 font-mono truncate" />
+                                    <button onclick="copiarLink('link-epworth')" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700 transition-colors" title="Copiar enlace">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
+                                    </button>
+                                </div>
+    
+                                <div class="container-btn hidden w-full">
+                                    <button onclick="verRespuestas('epworth')" class="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 hover:text-blue-100 text-xs font-bold py-2 px-4 rounded border border-blue-500/30 flex items-center justify-center gap-2 transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                                        Ver Respuestas del Paciente
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+    
+                        <div class="bg-black/40 p-2 pr-3 rounded-lg border border-gray-700/50 group hover:border-emerald-500/50 transition-colors" id="row-berlin">
+                            <div class="flex items-center gap-2">
+                                <div class="bg-emerald-900/20 text-emerald-400 px-3 py-2 rounded font-bold text-xs uppercase tracking-wider min-w-[100px] text-center">Berlin</div>
+                                
+                                <div class="container-link flex items-center gap-2 w-full">
+                                    <input type="text" readonly id="link-berlin" class="bg-transparent border-none text-gray-500 text-xs w-full focus:ring-0 font-mono truncate" />
+                                    <button onclick="copiarLink('link-berlin')" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700 transition-colors">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
+                                    </button>
+                                </div>
+                                <div class="container-btn hidden w-full">
+                                    <button onclick="verRespuestas('berlin')" class="w-full bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-emerald-100 text-xs font-bold py-2 px-4 rounded border border-emerald-500/30 flex items-center justify-center gap-2 transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                                        Ver Respuestas del Paciente
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+    
+                        <div class="bg-black/40 p-2 pr-3 rounded-lg border border-gray-700/50 group hover:border-purple-500/50 transition-colors" id="row-psqi">
+                            <div class="flex items-center gap-2">
+                                <div class="bg-purple-900/20 text-purple-400 px-3 py-2 rounded font-bold text-xs uppercase tracking-wider min-w-[100px] text-center">psqi</div>
+                                
+                                <div class="container-link flex items-center gap-2 w-full">
+                                    <input type="text" readonly id="link-psqi" class="bg-transparent border-none text-gray-500 text-xs w-full focus:ring-0 font-mono truncate" />
+                                    <button onclick="copiarLink('link-psqi')" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700 transition-colors">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
+                                    </button>
+                                </div>
+                                <div class="container-btn hidden w-full flex gap-5">
+                                    <button onclick="verRespuestas('psqi')" class="flex-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 hover:text-purple-100 text-xs font-bold py-2 px-2 rounded border border-purple-500/30 flex items-center justify-center gap-2 transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                                        Ver Respuestas del Paciente
+                                    </button>
+                                    
+                                    <button onclick="abrirModalEstudio()" class="flex-1 bg-purple-700 hover:bg-purple-500 text-white text-xs font-bold py-2 px-2 rounded border border-purple-500 flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-900/20" title="Ingresar dato real de horas dormidas">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                                        Ingresar resultado de estudio
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </InfoCard>
+            </section>
+
             <section id="seguimiento" class="scroll-mt-32">
                 <InfoCard title="Seguimiento">
                     <div class="flex justify-between items-center mb-6">
@@ -884,25 +1139,44 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
         </div>
     </main>
 
-    <dialog id="modal-resultados" class="bg-gray-900 border border-gray-700 rounded-3xl p-0 shadow-2xl backdrop:backdrop-blur-xl w-full max-w-2xl text-left m-auto">
+    <dialog id="modal-copy-forms" class="bg-gray-900 border border-gray-700 rounded-3xl p-0 shadow-2xl backdrop:backdrop-blur-sm w-full max-w-xl text-left m-auto outline-none">
+        <div class="p-5 border-b border-gray-800 flex justify-between items-center bg-gray-800/50">
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.305-.883-.653-1.48-1.459-1.653-1.756-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                Enviar a Paciente
+            </h3>
+            <button onclick="document.getElementById('modal-copy-forms').close()" class="text-gray-500 hover:text-white transition-colors cursor-pointer text-2xl leading-none">&times;</button>
+        </div>
+        <div class="p-6 space-y-5">
+            <textarea id="texto-plantilla-wpp" class="w-full h-72 bg-gray-800/80 border border-gray-700 rounded-xl p-4 text-sm text-gray-300 focus:outline-none focus:border-green-500 resize-none font-sans" readonly>{mensajeWhatsApp}</textarea>
+            
+            <button id="btn-copiar-plantilla" onclick="copiarMensajeWpp()" class="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-green-900/20">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                Copiar Mensaje
+            </button>
+        </div>
+    </dialog>
+
+    <dialog id="modal-noche" class="bg-gray-900 border border-gray-700 rounded-3xl p-0 shadow-2xl backdrop:backdrop-blur-xl w-full max-w-2xl text-left m-auto outline-none">
         <div class="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-800/50">
-            <h3 class="text-xl font-bold text-white">Resultados de Estudio</h3>
-            <button onclick="document.getElementById('modal-resultados').close()" class="text-gray-500 hover:text-white transition-colors cursor-pointer text-2xl leading-none">&times;</button>
+            <h3 id="titulo-modal-noche" class="text-xl font-bold text-white">Registrar Noche</h3>
+            <button onclick="document.getElementById('modal-noche').close()" class="text-gray-500 hover:text-white transition-colors cursor-pointer text-2xl leading-none">&times;</button>
         </div>
         
-        <form method="POST" class="p-6 overflow-y-auto max-h-[80vh] custom-scrollbar">
-            <input type="hidden" name="action" value="registrar_reporte" />
-            
+        <form method="POST" id="form-noche" class="p-6 overflow-y-auto max-h-[80vh] custom-scrollbar">
+            <input type="hidden" name="action" id="action-noche" value="registrar_reporte" />
+            <input type="hidden" name="id_noche" id="id-noche-hidden" value="" />
+
             <div class="grid grid-cols-2 gap-6 mb-8">
                 <div class="space-y-2">
                     <label class="text-xs font-bold text-gray-400 uppercase">Duración Registro</label>
                     <div class="flex gap-2">
                         <div class="relative w-full">
-                            <input type="number" name="dur_reg_h" placeholder="0" value={regTiempo.h} class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                            <input type="number" name="dur_reg_h" id="dur_reg_h" placeholder="0" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                             <span class="absolute right-3 top-2.5 text-gray-500 text-sm">hr</span>
                         </div>
                         <div class="relative w-full">
-                            <input type="number" name="dur_reg_m" placeholder="0" value={regTiempo.m} class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                            <input type="number" name="dur_reg_m" id="dur_reg_m" placeholder="0" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                             <span class="absolute right-3 top-2.5 text-gray-500 text-sm">min</span>
                         </div>
                     </div>
@@ -911,11 +1185,11 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                     <label class="text-xs font-bold text-gray-400 uppercase">Duración Evaluación</label>
                     <div class="flex gap-2">
                         <div class="relative w-full">
-                            <input type="number" name="dur_eval_h" placeholder="0" value={evalTiempo.h} class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                            <input type="number" name="dur_eval_h" id="dur_eval_h" placeholder="0" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                             <span class="absolute right-3 top-2.5 text-gray-500 text-sm">hr</span>
                         </div>
                         <div class="relative w-full">
-                            <input type="number" name="dur_eval_m" placeholder="0" value={evalTiempo.m} class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                            <input type="number" name="dur_eval_m" id="dur_eval_m" placeholder="0" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                             <span class="absolute right-3 top-2.5 text-gray-500 text-sm">min</span>
                         </div>
                     </div>
@@ -928,34 +1202,38 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                 <div class="grid grid-cols-3 gap-4">
                     <div class="space-y-1">
                         <label class="text-xs text-indigo-400 font-bold ml-1">IAH (Total)</label>
-                        <input type="number" step="0.1" name="iah" value={reporteResultados?.iah ?? ''} class="w-full bg-indigo-900/20 border border-indigo-500/50 rounded-lg p-2.5 text-white focus:border-indigo-400 outline-none font-bold" />
+                        <input type="number" step="0.1" name="iah" id="f-iah" class="w-full bg-indigo-900/20 border border-indigo-500/50 rounded-lg p-2.5 text-white focus:border-indigo-400 outline-none font-bold" />
                     </div>
                     <div class="space-y-1">
                         <label class="text-xs text-gray-400 ml-1">Índice Apneas</label>
-                        <input type="number" step="0.1" name="indice_apneas" value={reporteResultados?.indice_apneas ?? ''} class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                        <input type="number" step="0.1" name="indice_apneas" id="f-indice_apneas" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                     </div>
                     <div class="space-y-1">
                         <label class="text-xs text-gray-400 ml-1">Índice Hipopneas</label>
-                        <input type="number" step="0.1" name="indice_hipopnea" value={reporteResultados?.indice_hipopnea ?? ''} class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                        <input type="number" step="0.1" name="indice_hipopnea" id="f-indice_hipopnea" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                     </div>
                 </div>
 
-                <div class="grid grid-cols-4 gap-3 bg-gray-800/30 p-3 rounded-xl border border-gray-800">
+                <div class="grid grid-cols-5 gap-3 bg-gray-800/30 p-3 rounded-xl border border-gray-800">
                     <div class="space-y-1 text-center">
                         <label class="text-[10px] text-gray-500">IAI</label>
-                        <input type="number" step="0.1" name="iai" value={reporteResultados?.iai ?? ''} class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
+                        <input type="number" step="0.1" name="iai" id="f-iai" class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
                     </div>
                     <div class="space-y-1 text-center">
                         <label class="text-[10px] text-gray-500">IAO</label>
-                        <input type="number" step="0.1" name="iao" value={reporteResultados?.iao ?? ''} class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
+                        <input type="number" step="0.1" name="iao" id="f-iao" class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
                     </div>
                     <div class="space-y-1 text-center">
                         <label class="text-[10px] text-gray-500">IAC</label>
-                        <input type="number" step="0.1" name="iac" value={reporteResultados?.iac ?? ''} class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
+                        <input type="number" step="0.1" name="iac" id="f-iac" class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
                     </div>
                     <div class="space-y-1 text-center">
                         <label class="text-[10px] text-gray-500">IAM</label>
-                        <input type="number" step="0.1" name="iam" value={reporteResultados?.iam ?? ''} class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
+                        <input type="number" step="0.1" name="iam" id="f-iam" class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
+                    </div>
+                    <div class="space-y-1 text-center">
+                        <label class="text-[10px] text-gray-500">IDO</label>
+                        <input type="number" step="0.1" name="ido" id="f-ido" class="w-full bg-gray-800 border border-gray-700 rounded text-center text-sm text-white p-1" />
                     </div>
                 </div>
             </div>
@@ -966,21 +1244,21 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                     <div class="space-y-1">
                         <label class="text-xs text-emerald-400 font-bold ml-1">Sat. Promedio</label>
                         <div class="relative">
-                            <input type="number" name="saturacion_promedio" value={reporteResultados?.saturacion_promedio ?? ''} class="w-full bg-emerald-900/10 border border-emerald-500/30 rounded-lg p-2.5 text-white focus:border-emerald-500 outline-none" />
+                            <input type="number" name="saturacion_promedio" id="f-saturacion_promedio" class="w-full bg-emerald-900/10 border border-emerald-500/30 rounded-lg p-2.5 text-white focus:border-emerald-500 outline-none" />
                             <span class="absolute right-3 top-2.5 text-emerald-500 text-sm">%</span>
                         </div>
                     </div>
                     <div class="space-y-1">
                         <label class="text-xs text-rose-400 font-bold ml-1">Pulso Promedio</label>
                         <div class="relative">
-                            <input type="number" name="pulso_promedio" value={reporteResultados?.pulso_promedio ?? ''} class="w-full bg-rose-900/10 border border-rose-500/30 rounded-lg p-2.5 text-white focus:border-rose-500 outline-none" />
+                            <input type="number" name="pulso_promedio" id="f-pulso_promedio" class="w-full bg-rose-900/10 border border-rose-500/30 rounded-lg p-2.5 text-white focus:border-rose-500 outline-none" />
                             <span class="absolute right-3 top-2.5 text-rose-500 text-sm">bpm</span>
                         </div>
                     </div>
                     <div class="space-y-1">
                         <label class="text-xs text-gray-400 ml-1">Ronquidos</label>
                         <div class="relative">
-                            <input type="number" name="ronquidos" value={reporteResultados?.ronquidos ?? ''} class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                            <input type="number" name="ronquidos" id="f-ronquidos" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                             <span class="absolute right-3 top-2.5 text-gray-500 text-xs">evt</span>
                         </div>
                     </div>
@@ -989,21 +1267,122 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                 <div class="grid grid-cols-2 gap-4 pt-2">
                     <div class="col-span-2 text-xs font-bold text-gray-500 uppercase">Desaturación &lt; 90%</div>
                     <div class="relative">
-                        <input type="number" name="sat_90_min" value={reporteResultados?.sat_90_min ?? ''} placeholder="Minutos" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                        <input type="number" name="sat_90_min" id="f-sat_90_min" placeholder="Minutos" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                         <span class="absolute right-3 top-2.5 text-gray-500 text-sm">min</span>
                     </div>
                     <div class="relative">
-                        <input type="number" step="0.1" name="sat_90_porc" value={reporteResultados?.sat_90_porc ?? ''} placeholder="Porcentaje" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                        <input type="number" step="0.1" name="sat_90_porc" id="f-sat_90_porc" placeholder="Porcentaje" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                        <span class="absolute right-3 top-2.5 text-gray-500 text-sm">%</span>
+                    </div>
+                    <div class="col-span-2 text-xs font-bold text-gray-500 uppercase mt-2">Desaturación &lt; 85%</div>
+                    <div class="relative">
+                        <input type="number" name="sat_85_min" id="f-sat_85_min" placeholder="Minutos" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
+                        <span class="absolute right-3 top-2.5 text-gray-500 text-sm">min</span>
+                    </div>
+                    <div class="relative">
+                        <input type="number" step="0.1" name="sat_85_porc" id="f-sat_85_porc" placeholder="Porcentaje" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 outline-none" />
                         <span class="absolute right-3 top-2.5 text-gray-500 text-sm">%</span>
                     </div>
                 </div>
             </div>
 
             <div class="pt-6 mt-6 border-t border-gray-800 flex justify-end gap-3">
-                <button type="button" onclick="document.getElementById('modal-resultados').close()" class="px-5 py-2.5 rounded-xl border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors cursor-pointer font-medium">Cancelar</button>
-                <button type="submit" class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20 transition-all cursor-pointer font-bold">Guardar Informe</button>
+                <button type="button" onclick="document.getElementById('modal-noche').close()" class="px-5 py-2.5 rounded-xl border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors cursor-pointer font-medium">Cancelar</button>
+                <button type="submit" class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20 transition-all cursor-pointer font-bold">Guardar</button>
             </div>
         </form>
+    </dialog>
+
+    <dialog id="modal-detalle-noche" class="bg-gray-900 border border-gray-700 rounded-3xl p-0 shadow-2xl backdrop:backdrop-blur-xl w-full max-w-2xl text-left m-auto outline-none">
+        <div class="p-5 border-b border-gray-800 flex justify-between items-center bg-gray-800/50">
+            <div>
+                <h3 id="titulo-detalle-noche" class="text-xl font-bold text-white">Noche 1</h3>
+                <p id="fecha-detalle-noche" class="text-xs text-gray-500 mt-0.5"></p>
+            </div>
+            <button onclick="document.getElementById('modal-detalle-noche').close()" class="text-gray-500 hover:text-white transition-colors cursor-pointer text-2xl leading-none">&times;</button>
+        </div>
+        <div id="contenido-detalle-noche" class="p-6 space-y-6 overflow-y-auto max-h-[80vh] custom-scrollbar"></div>
+    </dialog>
+
+    <form method="POST" id="form-eliminar-noche" class="hidden">
+        <input type="hidden" name="action" value="eliminar_noche" />
+        <input type="hidden" name="id_noche" id="id-eliminar-noche" value="" />
+    </form>
+
+    <dialog id="modal-psqi-estudio" class="m-auto bg-gray-900 border border-purple-500 rounded-2xl p-6 shadow-2xl backdrop:backdrop-blur-sm w-full max-w-sm text-center">
+        <div class="mb-4 text-purple-400 flex justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m3.75 9v6m3-3H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+            </svg>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-2">Datos del Estudio de Sueño</h3>
+        <p class="text-gray-400 text-xs mb-6 px-2">
+            Ingresa las horas reales de sueño obtenidas en el estudio clínico. <br>
+            <span class="text-purple-300">Esto recalculará la eficiencia y el puntaje total.</span>
+        </p>
+        
+        <form method="POST" class="flex flex-col gap-4">
+            <input type="hidden" name="action" value="update_psqi_study">
+            <input type="hidden" name="fase" id="input-fase-estudio">
+            
+            <div class="bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                <label class="text-xs text-gray-500 uppercase font-bold block mb-2">Horas Dormidas (Reales)</label>
+                <div class="flex items-center justify-center gap-2">
+                    <input type="number" step="0.1" name="horas" id="input-horas-estudio" placeholder="Ej. 5.5" class="bg-gray-900 border border-purple-500/50 rounded-lg p-2 text-white text-center text-xl font-mono w-24 focus:outline-none focus:ring-2 focus:ring-purple-500" required>
+                    <span class="text-gray-400 font-bold">Hrs</span>
+                </div>
+            </div>
+
+            <div class="flex gap-3 justify-center mt-2">
+                <button type="button" onclick="document.getElementById('modal-psqi-estudio').close()" class="flex-1 py-2.5 rounded-xl border border-gray-600 text-gray-300 hover:text-white cursor-pointer hover:bg-gray-800 transition-colors">
+                    Cancelar
+                </button>
+                <button type="submit" class="flex-1 py-2.5 rounded-xl bg-purple-600 text-white font-bold hover:bg-purple-500 cursor-pointer shadow-lg shadow-purple-900/20">
+                    Guardar
+                </button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="modal-ver-respuestas" class="m-auto bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl backdrop:backdrop-blur-sm w-full max-w-2xl text-left p-0 overflow-hidden">
+        
+        <div class="bg-gray-800 border-b border-gray-700 p-5 sticky top-0 z-10">
+            <div class="flex justify-between items-start mb-3">
+                <div>
+                    <h3 class="text-xl font-bold text-white capitalize flex items-center gap-3">
+                        <span id="titulo-ver-respuestas">Resultados</span>
+                        <span id="badge-fase" class="text-[10px] px-2 py-0.5 rounded-full border uppercase tracking-wider"></span>
+                    </h3>
+                    <p class="text-sm text-gray-400 mt-1 flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" /></svg>
+                        <span id="subtitulo-ver-respuestas">Fecha</span>
+                    </p>
+                </div>
+                <button onclick="document.getElementById('modal-ver-respuestas').close()" class="text-gray-400 hover:text-white bg-gray-700/50 hover:bg-gray-600 rounded-lg p-2 transition-colors cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="flex items-center gap-2 bg-gray-900/50 border border-gray-700/50 rounded-lg p-2">
+                <div class="bg-gray-800 p-1.5 rounded text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                </div>
+                <input type="text" id="modal-link-input" readonly class="bg-transparent border-none text-xs text-blue-400 font-mono w-full focus:ring-0 px-0" />
+                <button onclick="copiarLinkModal()" class="text-xs font-bold text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-md transition-colors whitespace-nowrap" id="btn-copiar-modal">
+                    Copiar
+                </button>
+            </div>
+        </div>
+
+        <div class="max-h-[60vh] overflow-y-auto bg-gray-900">
+            <div id="contenido-respuestas" class="divide-y divide-gray-800"></div>
+        </div>
+        
+        <div class="bg-gray-800/30 border-t border-gray-800 p-2 text-center">
+            <span class="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Fin del reporte</span>
+        </div>
     </dialog>
 
     <dialog id="modal-eliminar-observacion" class="m-auto bg-gray-900 border border-red-500/50 rounded-2xl p-6 shadow-2xl backdrop:backdrop-blur-sm w-full max-w-sm text-center">
@@ -1401,7 +1780,76 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
 
 </style>
 
-<script define:vars={{nombreAutor}}>
+<script define:vars={{ baseUrl: Astro.url.origin, token: paciente.token_cuestionarios, respuestasGuardadas: paciente.respuestas_cuestionarios || [], nombreAutor, nochesData: reportesNoches }}>
+    const DICCIONARIOS = {
+        epworth: {
+            epworth_1: "Al estar sentado leyendo",
+            epworth_2: "Viendo T.V.",
+            epworth_3: "Sentado inactivo en un lugar público",
+            epworth_4: "Como pasajero en un auto (1 hora)",
+            epworth_5: "Recostado descansando por la tarde",
+            epworth_6: "Sentado, hablando con alguien",
+            epworth_7: "Sentado tranquilamente tras comer",
+            epworth_8: "En un auto detenido por tráfico"
+        },
+        berlin: {
+            edad: "Edad",
+            altura: "Altura (cm)",
+            peso: "Peso (kg)",
+            sexo: "Sexo",
+            ronca: "¿Ronca?",
+            ronca_volumen: "Volumen del ronquido",
+            ronca_frecuencia: "Frecuencia del ronquido",
+            ronca_molesta: "¿Molesta a otros?",
+            ronca_deja_de_respirar: "¿Deja de respirar?",
+            despierta_cansado: "¿Despierta cansado?",
+            se_siente_mal: "¿Fatiga diurna?",
+            se_quedo_dormido: "¿Se durmió conduciendo?",
+            se_quedo_dormido_frecuencia: "Frecuencia al conducir",
+            hipertension: "¿Hipertensión?"
+        },
+        psqi: {
+            // Datos básicos
+            hora_acostarse: "Hora habitual de acostarse",
+            tiempo_dormir: "Tiempo para conciliar el sueño",
+            hora_levantarse: "Hora habitual de levantarse",
+            horas_sueno: "Horas de sueño reales",
+            
+            // Perturbaciones (Alteraciones)
+            alteracion_1: "No poder dormir en 30 min",
+            alteracion_2: "Despertar a media noche/madrugada",
+            alteracion_3: "Tener que ir al baño",
+            alteracion_4: "No poder respirar bien",
+            alteracion_5: "Tos o ronquidos",
+            alteracion_6: "Sentir frío",
+            alteracion_7: "Sentir calor",
+            alteracion_8: "Tener pesadillas",
+            alteracion_9: "Sentir dolor",
+            
+            // Otra causa
+            otra_causa: "Otra causa de alteración (descripción)",
+            frecuencia_otra_alteracion: "Frecuencia de otra causa",
+            
+            // Hábitos y Funcionalidad
+            calidad_sueno: "Calidad subjetiva del sueño",
+            tomo_medicinas: "Uso de medicinas para dormir",
+            dificultad_despierto: "Dificultad para mantenerse despierto",
+            problema_entusiasmo: "Problema de entusiasmo/ánimo",
+            
+            // Pareja / Compañero
+            pareja_companero: "Presencia de compañero de cama",
+            compañero_1: "Pareja: Ronquidos fuertes",
+            compañero_2: "Pareja: Pausas respiratorias",
+            compañero_3: "Pareja: Movimientos de piernas",
+            compañero_4: "Pareja: Desorientación/Confusión",
+            compañero_5: "Pareja: Otro trastorno",
+            otra_transtorno: "Desc. trastorno pareja",
+
+            // Datos Extra
+            horas_sueno_estudio: "Horas Sueño (Dato Estudio Médico)",
+            puntaje: "Puntaje Global PSQI"
+        }
+    };
 
     const savedScroll = sessionStorage.getItem('scrollPos');
     
@@ -1616,4 +2064,392 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
             toggle();
         }
     });
+
+    let currentFase = 'pre';
+    
+    // Referencias a los inputs de links
+    const inputs = {
+        epworth: document.getElementById('link-epworth'),
+        berlin: document.getElementById('link-berlin'),
+        psqi: document.getElementById('link-psqi'),
+    };
+
+    // Referencias a las filas completas (para ocultar link y mostrar botón)
+    const rows = {
+        epworth: document.getElementById('row-epworth'),
+        berlin: document.getElementById('row-berlin'),
+        psqi: document.getElementById('row-psqi'),
+    };
+    
+    window.setFase = (fase) => {
+        currentFase = fase;
+
+        const urlEpworth = `${baseUrl}/cuestionarios/epworth/${token}?fase=${fase}`;
+        const urlBerlin = `${baseUrl}/cuestionarios/berlin/${token}?fase=${fase}`;
+        const urlPsqi = `${baseUrl}/cuestionarios/psqi/${token}?fase=${fase}`;
+
+        inputs.epworth.value = urlEpworth;
+        inputs.berlin.value = urlBerlin;
+        inputs.psqi.value = urlPsqi;
+
+        const textareaWpp = document.getElementById('texto-plantilla-wpp');
+        if (textareaWpp) {
+            textareaWpp.value = `Buen día. Soy ${nombreAutor}, del laboratorio del sueño y neurociencias de la UADY. Estos son los formularios para complementar el estudio de Apnea. Si tiene oportunidad de contestarlo con alguien más, por si hay algún dato que desconoce y alguien más pueda ayudarlo a responder.\n\nAquí le dejo los links:\n\nIndice de calidad de sueño de pitsburgh:\n${urlPsqi}\n\nCuestionario Berlin:\n${urlBerlin}\n\nEscala Epworth de somnolencia:\n${urlEpworth}`;
+        }
+
+        ['pre', 'inter', 'post'].forEach(f => {
+            const btn = document.getElementById(`btn-${f}`);
+            if(btn) {
+                btn.className = f === fase 
+                    ? "px-4 py-1.5 rounded-md text-sm font-medium transition-all bg-blue-600 text-white shadow"
+                    : "px-4 py-1.5 rounded-md text-sm font-medium transition-all text-gray-400 hover:text-white";
+            }
+        });
+
+        ['epworth', 'berlin', 'psqi'].forEach(cuestionario => {
+            const row = rows[cuestionario];
+            if(!row) return;
+
+            const containerLink = row.querySelector('.container-link');
+            const containerBtn = row.querySelector('.container-btn');
+
+            const respuesta = respuestasGuardadas.find(r => r.cuestionario === cuestionario && r.fase === fase);
+
+            if (respuesta) {
+                // SÍ HAY RESPUESTA
+                containerLink.classList.add('hidden');
+                containerBtn.classList.remove('hidden');
+            } else {
+                // NO HAY RESPUESTA
+                containerLink.classList.remove('hidden');
+                containerBtn.classList.add('hidden');
+            }
+        });
+    }
+
+    // Función para abrir el modal con los datos
+    window.verRespuestas = (cuestionario) => {
+        const respuesta = respuestasGuardadas.find(r => r.cuestionario === cuestionario && r.fase === currentFase);
+        if (!respuesta || !respuesta.datos) return;
+
+        const modal = document.getElementById('modal-ver-respuestas');
+        const titulo = document.getElementById('titulo-ver-respuestas');
+        const subtitulo = document.getElementById('subtitulo-ver-respuestas');
+        const badgeFase = document.getElementById('badge-fase');
+        const contenido = document.getElementById('contenido-respuestas');
+        const modalLinkInput = document.getElementById('modal-link-input');
+
+        // Configuración de Textos y Colores
+        titulo.textContent = cuestionario.charAt(0).toUpperCase() + cuestionario.slice(1);
+        subtitulo.textContent = new Date(respuesta.updated_at).toLocaleDateString('es-MX', { 
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+        });
+
+        const colorMap = { pre: 'blue', inter: 'purple', post: 'emerald' };
+        const color = colorMap[currentFase] || 'gray';
+        
+        badgeFase.textContent = currentFase.toUpperCase();
+        badgeFase.className = `text-[10px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-bold bg-${color}-500/10 text-${color}-400 border-${color}-500/20`;
+
+        const fullLink = `${baseUrl}/cuestionarios/${cuestionario}/${token}?fase=${currentFase}`;
+        if(modalLinkInput) modalLinkInput.value = fullLink;
+
+        let html = '';
+        const datos = respuesta.datos;
+        const preguntas = DICCIONARIOS[cuestionario] || {};
+
+        // 1. SECCIÓN DE PUNTAJE (Banner Superior)
+        if (datos.puntaje !== undefined) {
+            html += `
+                <div class="px-6 py-5 bg-gradient-to-r from-gray-800/50 to-gray-900 border-b border-gray-700 flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-xs font-bold uppercase tracking-widest mb-1">Puntaje Total</p>
+                        <p class="text-gray-500 text-xs">Cálculo automático</p>
+                    </div>
+                    <div class="flex flex-col items-end">
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-3xl font-mono font-bold text-white">${datos.puntaje}</span>
+                            <span class="text-xs text-gray-500 font-medium uppercase">pts</span>
+                        </div>
+            `;
+            
+            // --- LÓGICA ESPECÍFICA PARA BERLIN: RESUMEN DE CATEGORÍAS ---
+            if (cuestionario === 'berlin') {
+                let cats = [];
+                // Buscamos en el JSON las claves que guardamos desde calculos.ts
+                if (datos["Resultado Categoría 1 (Ronquido)"]?.includes("POSITIVA")) cats.push("1");
+                if (datos["Resultado Categoría 2 (Somnolencia)"]?.includes("POSITIVA")) cats.push("2");
+                if (datos["Resultado Categoría 3 (Presión Arterial)"]?.includes("POSITIVA")) cats.push("3");
+
+                const textoCats = cats.length > 0 ? cats.join(", ") : "Ninguna";
+                const colorTexto = cats.length > 0 ? "text-red-400" : "text-gray-400";
+
+                // Agregamos el resumen justo debajo del puntaje
+                html += `
+                        <div class="mt-1 text-right">
+                            <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider mr-1">Categorías Positivas:</span>
+                            <span class="text-sm font-bold ${colorTexto}">${textoCats}</span>
+                        </div>
+                `;
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+
+        // 2. DETALLES ESPECÍFICOS
+        // Definimos claves que NO queremos mostrar en la lista normal porque son de lógica interna
+        const clavesOcultas = [
+            "puntaje", 
+            "Categoría 1 (Ronquido)", 
+            "Categoría 2 (Somnolencia)", 
+            "Categoría 3 (Hipertensión/IMC)",
+            "Riesgo Global"
+        ];
+
+        for (const key in datos) {
+            if (clavesOcultas.includes(key)) continue;
+
+            const textoPregunta = preguntas[key] || key;
+            const valorRespuesta = datos[key];
+
+            html += `
+                <div class="px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-2 hover:bg-white/5 transition-colors group border-b border-gray-800/30 last:border-0">
+                    <div class="md:w-3/4">
+                        <p class="text-gray-300 text-sm font-medium leading-snug group-hover:text-white transition-colors">
+                            ${textoPregunta}
+                        </p>
+                    </div>
+                    <div class="md:w-1/4 flex justify-end">
+                        <span class="inline-block bg-gray-900 border border-gray-700 text-gray-300 px-3 py-1.5 rounded text-xs font-mono font-bold text-center min-w-[3rem]">
+                            ${valorRespuesta}
+                        </span>
+                    </div>
+                </div>
+            `;
+        }
+
+        contenido.innerHTML = html;
+        modal.showModal();
+    }
+
+    window.copiarMensajeWpp = () => {
+        const textarea = document.getElementById('texto-plantilla-wpp');
+        const btn = document.getElementById('btn-copiar-plantilla');
+        
+        // Seleccionar y copiar el texto
+        textarea.select();
+        navigator.clipboard.writeText(textarea.value);
+        
+        // Feedback visual
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> ¡Mensaje Copiado!`;
+        btn.classList.remove('bg-green-600', 'hover:bg-green-500');
+        btn.classList.add('bg-emerald-500');
+        
+        // Restaurar botón después de 2 segundos
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.classList.remove('bg-emerald-500');
+            btn.classList.add('bg-green-600', 'hover:bg-green-500');
+        }, 2000);
+    }
+
+    window.copiarLink = (inputId) => {
+        const input = document.getElementById(inputId);
+        input.select();
+        navigator.clipboard.writeText(input.value);
+        
+        // Efecto visual de copiado
+        const parent = input.parentElement;
+        parent.classList.add('bg-blue-900/30', 'border-blue-500');
+        setTimeout(() => parent.classList.remove('bg-blue-900/30', 'border-blue-500'), 200);
+    }
+
+    window.copiarLinkModal = () => {
+        const input = document.getElementById('modal-link-input');
+        const btn = document.getElementById('btn-copiar-modal');
+        
+        input.select();
+        navigator.clipboard.writeText(input.value);
+        
+        // Feedback visual en el botón
+        const textoOriginal = btn.innerText;
+        btn.innerText = "¡Copiado!";
+        btn.classList.add('text-green-400');
+        
+        setTimeout(() => {
+            btn.innerText = textoOriginal;
+            btn.classList.remove('text-green-400');
+        }, 1500);
+    }
+
+    // Función para abrir el modal de ajuste de estudio
+    window.abrirModalEstudio = () => {
+        const respuesta = respuestasGuardadas.find(r => r.cuestionario === 'psqi' && r.fase === currentFase);
+        
+        if (!respuesta) return;
+
+        const modal = document.getElementById('modal-psqi-estudio');
+        const inputFase = document.getElementById('input-fase-estudio');
+        const inputHoras = document.getElementById('input-horas-estudio');
+
+        // Configurar valores
+        inputFase.value = currentFase;
+        
+        // Buscar si ya hay un valor previo guardado en el JSON
+        const horasPrevias = respuesta.datos.horas_sueno_estudio;
+        inputHoras.value = horasPrevias ? horasPrevias : '';
+
+        modal.showModal();
+    }
+
+    // ── NOCHES DE REPORTE ──────────────────────────────────────────────────
+
+    // Abre el modal en modo REGISTRO (sin args) o EDICIÓN (con el id de la noche)
+    window.abrirModalNoche = (nocheId = null) => {
+        const titulo   = document.getElementById('titulo-modal-noche');
+        const action   = document.getElementById('action-noche');
+        const idHidden = document.getElementById('id-noche-hidden');
+        const campos   = ['iah','indice_apneas','indice_hipopnea','iai','iao','iac','iam',
+                          'saturacion_promedio','pulso_promedio','ronquidos','sat_90_min','sat_90_porc','sat_85_min','sat_85_porc','ido'];
+
+        const noche = nocheId != null ? nochesData.find(n => n.id == nocheId) : null;
+
+        if (noche) {
+            titulo.textContent = 'Editar Noche';
+            action.value       = 'editar_noche';
+            idHidden.value     = noche.id;
+
+            const regMatch  = (noche.duracion_registro  || '').match(/(\d+)h\s*(\d+)m/);
+            const evalMatch = (noche.duracion_evaluacion || '').match(/(\d+)h\s*(\d+)m/);
+            document.getElementById('dur_reg_h').value  = regMatch  ? regMatch[1]  : '';
+            document.getElementById('dur_reg_m').value  = regMatch  ? regMatch[2]  : '';
+            document.getElementById('dur_eval_h').value = evalMatch ? evalMatch[1] : '';
+            document.getElementById('dur_eval_m').value = evalMatch ? evalMatch[2] : '';
+
+            campos.forEach(c => {
+                const el = document.getElementById(`f-${c}`);
+                if (el) el.value = noche[c] != null ? noche[c] : '';
+            });
+        } else {
+            titulo.textContent = 'Registrar Noche';
+            action.value       = 'registrar_reporte';
+            idHidden.value     = '';
+
+            ['dur_reg_h','dur_reg_m','dur_eval_h','dur_eval_m'].forEach(fid => {
+                document.getElementById(fid).value = '';
+            });
+            campos.forEach(c => {
+                const el = document.getElementById(`f-${c}`);
+                if (el) el.value = '';
+            });
+        }
+
+        document.getElementById('modal-noche').showModal();
+    };
+
+    // Abre el modal de detalle (solo lectura) al hacer click en una fila
+    window.abrirDetalleNoche = (nocheId) => {
+        const noche = nochesData.find(n => n.id == nocheId);
+        if (!noche) return;
+
+        const numNoche = nochesData.indexOf(noche) + 1;
+
+        document.getElementById('titulo-detalle-noche').textContent = `Noche ${numNoche}`;
+        document.getElementById('fecha-detalle-noche').textContent  =
+            noche.created_at ? new Date(noche.created_at).toLocaleDateString('es-MX',
+                { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
+
+        const val = (v, suf = '') => v != null ? `${v}${suf}` : '—';
+
+        document.getElementById('contenido-detalle-noche').innerHTML = `
+            <div class="grid grid-cols-2 gap-4 bg-gray-800/40 p-4 rounded-xl border border-gray-700/50">
+                <div class="text-center">
+                    <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Duración Registro</span>
+                    <p class="text-xl text-white font-mono mt-1">${val(noche.duracion_registro)}</p>
+                </div>
+                <div class="text-center border-l border-gray-700/50">
+                    <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Duración Evaluación</span>
+                    <p class="text-xl text-white font-mono mt-1">${val(noche.duracion_evaluacion)}</p>
+                </div>
+            </div>
+
+            <div>
+                <h4 class="text-sm font-bold text-gray-400 mb-3 border-b border-gray-800 pb-1">Análisis Respiratorio</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-lg text-center">
+                        <span class="text-xs text-indigo-300 font-bold block">IAH</span>
+                        <span class="text-2xl font-bold text-white">${val(noche.iah)}</span>
+                    </div>
+                    <div class="bg-gray-800 p-3 rounded-lg text-center">
+                        <span class="text-xs text-gray-400 block">Índice Apneas</span>
+                        <span class="text-xl font-bold text-gray-200">${val(noche.indice_apneas)}</span>
+                    </div>
+                    <div class="bg-gray-800 p-3 rounded-lg text-center">
+                        <span class="text-xs text-gray-400 block">Índice Hipopnea</span>
+                        <span class="text-xl font-bold text-gray-200">${val(noche.indice_hipopnea)}</span>
+                    </div>
+                    <div class="bg-gray-800 p-3 rounded-lg text-center">
+                        <span class="text-xs text-gray-400 block">Ronquidos</span>
+                        <span class="text-xl font-bold text-gray-200">${val(noche.ronquidos)}</span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-5 gap-2 mt-3 text-center">
+                    <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IAI</span><span class="text-sm font-mono text-gray-300">${val(noche.iai)}</span></div>
+                    <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IAO</span><span class="text-sm font-mono text-gray-300">${val(noche.iao)}</span></div>
+                    <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IAC</span><span class="text-sm font-mono text-gray-300">${val(noche.iac)}</span></div>
+                    <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IAM</span><span class="text-sm font-mono text-gray-300">${val(noche.iam)}</span></div>
+                    <div class="bg-gray-800/30 rounded py-1"><span class="text-[10px] text-gray-500 block">IDO</span><span class="text-sm font-mono text-gray-300">${val(noche.ido)}</span></div>
+                </div>
+            </div>
+
+            <div>
+                <h4 class="text-sm font-bold text-gray-400 mb-3 border-b border-gray-800 pb-1">Oximetría y Pulso</h4>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-lg">
+                        <span class="text-xs text-emerald-400 font-bold">Sat. Promedio</span>
+                        <span class="text-xl font-bold text-white">${val(noche.saturacion_promedio, '%')}</span>
+                    </div>
+                    <div class="flex items-center justify-between bg-rose-500/5 border border-rose-500/10 p-3 rounded-lg">
+                        <span class="text-xs text-rose-400 font-bold">Pulso Promedio</span>
+                        <span class="text-xl font-bold text-white">${val(noche.pulso_promedio)} <span class="text-xs text-gray-500">bpm</span></span>
+                    </div>
+                    <div class="flex flex-col justify-center bg-gray-800/50 p-2 rounded-lg text-center">
+                        <span class="text-[10px] text-gray-500 uppercase">Sat &lt; 90%</span>
+                        <div class="flex justify-center gap-3 text-sm font-mono">
+                            <span class="text-white">${val(noche.sat_90_min, ' min')}</span>
+                            <span class="text-gray-600">|</span>
+                            <span class="text-white">${val(noche.sat_90_porc, '%')}</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col justify-center bg-gray-800/50 p-2 rounded-lg text-center">
+                        <span class="text-[10px] text-gray-500 uppercase">Sat &lt; 85%</span>
+                        <div class="flex justify-center gap-3 text-sm font-mono">
+                            <span class="text-white">${val(noche.sat_85_min, ' min')}</span>
+                            <span class="text-gray-600">|</span>
+                            <span class="text-white">${val(noche.sat_85_porc, '%')}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('modal-detalle-noche').showModal();
+    };
+
+    // Pide confirmación antes de eliminar
+    window.confirmarEliminarNoche = (idNoche, numNoche) => {
+        if (confirm(`¿Eliminar la noche ${numNoche}? Esta acción no se puede deshacer.`)) {
+            document.getElementById('id-eliminar-noche').value = idNoche;
+            document.getElementById('form-eliminar-noche').submit();
+        }
+    };
+
+    // ── FIN NOCHES ─────────────────────────────────────────────────────────
+
+    // Inicializar
+    setFase('pre');
 </script>
