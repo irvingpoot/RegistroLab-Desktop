@@ -3,7 +3,7 @@
   "author": "Irving Poot",
   "description": "Sistema de Gestión Lab-Somno",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "main": "electron-main.cjs",
   "scripts": {
     "dev": "astro dev",
