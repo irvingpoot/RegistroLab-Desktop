@@ -5,7 +5,10 @@ import node from "@astrojs/node";
 
 export default defineConfig({
   vite: {
-    plugins: [tailwindcss()]
+    plugins: [tailwindcss()], 
+    ssr: {
+      noExternal: ['@supabase/supabase-js'], 
+    },
   },
   output: "server",
   adapter: node({

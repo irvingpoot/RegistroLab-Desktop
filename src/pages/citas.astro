@@ -45,7 +45,6 @@ const currentMonth = parseInt(Astro.url.searchParams.get('month') || today.getMo
 const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const displayMonth = monthNames[currentMonth];
 
-// 2. LÓGICA DE CALENDARIO
 const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
 const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 const baseYear = new Date().getFullYear();
@@ -80,6 +79,18 @@ if (Astro.request.method === "POST") {
                 const nuevaFecha = data.get("nueva_fecha") as string;
                 const fechaObj = new Date(`${nuevaFecha}-06:00`);
                 const nuevaFechaISO = fechaObj.toISOString();
+                const fechaSoloDia = nuevaFecha.split('T')[0];
+
+                const { data: diaBloqueado } = await supabase
+                    .from('dias_inhabiles')
+                    .select('fecha')
+                    .eq('fecha', fechaSoloDia)
+                    .single();
+
+                if (diaBloqueado) {
+                    console.warn(`Intento bloqueado: Se intentó reagendar al día inhábil ${fechaSoloDia}`);
+                    return Astro.redirect(Astro.url.href); 
+                }
                 
                 const { data: citaOriginal, error: errorFetch } = await supabase
                     .from('citas')
@@ -104,7 +115,6 @@ if (Astro.request.method === "POST") {
                         });
 
                     if (!insertError) {
-                        // CORRECCIÓN AQUÍ: Forzamos la zona horaria a Mérida para el texto
                         const fechaTexto = fechaObj.toLocaleString('es-MX', { 
                             timeZone: 'America/Merida',
                             year: 'numeric', month: 'numeric', day: 'numeric',
@@ -129,33 +139,72 @@ if (Astro.request.method === "POST") {
                 await supabase.from('citas').update({ estado: nuevoEstado }).eq('id', citaId);
             }
         }
+
+        if (accion === 'toggle_inhabil') {
+            const fechaInhabil = data.get("fecha") as string;
+            const esInhabilStr = data.get("es_inhabil");
+
+            if (esInhabilStr === 'true') {
+                await supabase.from('dias_inhabiles').delete().eq('fecha', fechaInhabil);
+            } else {
+                await supabase.from('dias_inhabiles').insert({ fecha: fechaInhabil });
+            }
+            return Astro.redirect(Astro.url.href);
+        }
+
+        if (accion === 'procesar_periodo') {
+            const fechaInicio = data.get("fecha_inicio") as string;
+            const fechaFin = data.get("fecha_fin") as string;
+            const tipoOperacion = data.get("tipo_operacion") as string;
+
+            if (fechaInicio && fechaFin) {
+                const start = new Date(`${fechaInicio}T12:00:00`);
+                const end = new Date(`${fechaFin}T12:00:00`);
+                const fechasProcesar = [];
+
+                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    fechasProcesar.push(d.toISOString().split('T')[0]);
+                }
+
+                if (fechasProcesar.length > 0) {
+                    if (tipoOperacion === 'bloquear') {
+                        const insertData = fechasProcesar.map(f => ({ fecha: f }));
+                        await supabase.from('dias_inhabiles').upsert(insertData, { onConflict: 'fecha' });
+                    } else if (tipoOperacion === 'habilitar') {
+                        await supabase.from('dias_inhabiles').delete().in('fecha', fechasProcesar);
+                    }
+                }
+            }
+            return Astro.redirect(Astro.url.href);
+        }
+
     } catch (e) {
         console.error("Error procesando cita:", e);
     }
 }
 
-// Seleccionamos todo (*) para tener estado, nombre, motivo, etc.
-const { data: citasRaw, error } = await supabase
-    .from('citas')
-    .select(`
-        id,
-        fecha_hora,
-        nombre,
-        estado,
-        referencia,
-        sintoma,
-        telefono,
-        motivo,
-        atendido_por,
-        observaciones
-    `) 
-    .gte('fecha_hora', startDateStr)
-    .lte('fecha_hora', endDateStr)
-    .order('fecha_hora', { ascending: true });
+const [citasResponse, inhabilesResponse] = await Promise.all([
+    supabase
+        .from('citas')
+        .select('id, fecha_hora, nombre, estado, referencia, sintoma, telefono, motivo, atendido_por, observaciones') 
+        .gte('fecha_hora', startDateStr)
+        .lte('fecha_hora', endDateStr)
+        .order('fecha_hora', { ascending: true }),
+    
+    supabase
+        .from('dias_inhabiles')
+        .select('fecha')
+        .gte('fecha', startDateStr.split('T')[0])
+        .lte('fecha', endDateStr.split('T')[0])
+]);
+
+const { data: citasRaw, error } = citasResponse;
+const { data: inhabilesRaw } = inhabilesResponse;
 
 if (error) console.error("Error fetching citas:", error);
 
-const citasPorDia = new Map();
+const diasInhabilesSet = new Set(inhabilesRaw?.map(d => d.fecha) || []);
+const citasPorDia = new Map();;
 
 citasRaw?.forEach((cita) => {
     // Convertir UTC a fecha local simple para agrupar
@@ -180,6 +229,10 @@ citasRaw?.forEach((cita) => {
             </div>
             
             <div class="flex items-center gap-4">
+                <button onclick="document.getElementById('modal-periodo').showModal()" class="bg-blue-600 hover:bg-red-900 text-white font-medium w-10 h-10 md:w-auto md:px-4 rounded-full flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-105">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>
+                    <span class="hidden md:inline text-sm">Gestionar días inhabiles</span>
+                </button>
                 <a href="/citas" class="bg-blue-600 hover:bg-blue-500 text-white font-medium w-10 h-10 md:w-auto md:px-4 rounded-full flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all hover:scale-105">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="#fff" viewBox="0 0 24 24"><path id="SVGRepo_iconCarrier" fill="#fff" d="M4.395 12.001a.75.75 0 0 0 1.5-.001zm1.894-3.89.63.407zm3.046-2.577-.295-.69h-.001zm3.921-.4.152-.735h-.002zM16.73 7.05l-.54.52zm.984 3.157a.75.75 0 0 0 1.442-.415zm-.005-.396a.75.75 0 1 0 1.452.377zm2.162-2.355a.75.75 0 1 0-1.452-.377zm-1.636 3.266a.75.75 0 0 0 .4-1.445zm-2.25-2.177a.75.75 0 1 0-.399 1.446zM19.896 12a.75.75 0 1 0-1.5.001zm-1.894 3.89-.63-.407zm-3.046 2.578.296.689zm-3.921.4-.152.734h.002zM7.56 16.95l.54-.52v-.002zm-.984-3.158a.75.75 0 0 0-1.442.415zm.005.396a.75.75 0 1 0-1.452-.377zm-2.162 2.355a.75.75 0 1 0 1.452.377zm1.636-3.266a.75.75 0 0 0-.4 1.445zm2.25 2.178a.75.75 0 0 0 .399-1.446zM5.894 12a6.4 6.4 0 0 1 1.024-3.482l-1.26-.813A7.9 7.9 0 0 0 4.395 12zM6.92 8.518a6.1 6.1 0 0 1 2.71-2.295l-.59-1.378a7.6 7.6 0 0 0-3.38 2.86zm2.71-2.295a5.85 5.85 0 0 1 3.476-.355l.3-1.47a7.35 7.35 0 0 0-4.366.446zm3.473-.355A6 6 0 0 1 16.19 7.57l1.08-1.04a7.5 7.5 0 0 0-3.861-2.132zm3.088 1.704a6.3 6.3 0 0 1 1.523 2.636l1.442-.415a7.8 7.8 0 0 0-1.887-3.264zm2.97 2.617.71-2.732-1.452-.377-.71 2.732zm-.526-.911-2.65-.732-.399 1.446 2.65.731zM18.395 12a6.4 6.4 0 0 1-1.024 3.482l1.26.813A7.9 7.9 0 0 0 19.895 12zm-1.024 3.482a6.1 6.1 0 0 1-2.712 2.296l.592 1.378a7.6 7.6 0 0 0 3.38-2.861zm-2.711 2.295a5.85 5.85 0 0 1-3.476.355l-.3 1.47a7.35 7.35 0 0 0 4.367-.446zm-3.473.355A6 6 0 0 1 8.1 16.43l-1.08 1.041a7.47 7.47 0 0 0 3.862 2.13zM8.099 16.43a6.3 6.3 0 0 1-1.523-2.637l-1.442.415a7.8 7.8 0 0 0 1.887 3.264zm-2.97-2.618-.71 2.732 1.452.377.71-2.732zm.526.912 2.65.732.399-1.446-2.65-.732z"/></svg>
                     <span class="hidden md:inline text-sm">Actualizar calendario</span>
@@ -252,21 +305,33 @@ citasRaw?.forEach((cita) => {
                     const citasDia = citasPorDia.get(dayNum) || [];
                     const isToday = dayNum === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
                     
+                    const m = String(currentMonth + 1).padStart(2, '0');
+                    const d = String(dayNum).padStart(2, '0');
+                    const fechaISO = `${currentYear}-${m}-${d}`;
+                    const isInhabil = diasInhabilesSet.has(fechaISO);
+                    
                     return (
                         <div 
                             class={`group relative p-3 rounded-2xl border transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden
-                                ${isToday 
-                                    ? 'bg-blue-600/20 border-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.2)]' 
-                                    : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 hover:scale-[1.02] hover:shadow-xl'
+                                ${isInhabil 
+                                    ? 'bg-red-900/10 border-red-500/20 shadow-[inset_0_0_20px_rgba(220,38,38,0.05)] hover:border-red-500/40' 
+                                    : isToday 
+                                        ? 'bg-blue-600/20 border-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.2)]' 
+                                        : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 hover:scale-[1.02] hover:shadow-xl'
                                 }
                             `}
                             onclick={`window.openDayModal(${dayNum})`}
                         >
                             <div class="flex justify-between items-start z-10">
-                                <span class={`text-lg font-bold leading-none ${isToday ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'}`}>
+                                <span class={`text-lg font-bold leading-none ${isInhabil ? 'text-red-400' : isToday ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'}`}>
                                     {dayNum}
                                 </span>
-                                {citasDia.length > 0 && (
+                                
+                                {isInhabil && (
+                                    <span class="text-[9px] uppercase font-bold text-red-400 tracking-widest border border-red-500/30 px-1.5 rounded-sm">Inhábil</span>
+                                )}
+
+                                {!isInhabil && citasDia.length > 0 && (
                                     <span class="flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-bold bg-white text-gray-900 rounded-full shadow-sm">
                                         {citasDia.length}
                                     </span>
@@ -275,7 +340,8 @@ citasRaw?.forEach((cita) => {
 
                             <div class="space-y-1 mt-2 z-10">
                                 {citasDia.slice(0, 2).map((cita: any) => (
-                                    <div class="flex items-center gap-1.5 text-[10px] text-gray-300 bg-gray-900/40 rounded px-1.5 py-1 backdrop-blur-sm border border-white/5 truncate">
+                                    <div class={`flex items-center gap-1.5 text-[10px] rounded px-1.5 py-1 backdrop-blur-sm border truncate 
+                                        ${isInhabil ? 'bg-red-900/40 border-red-500/10 text-red-300/70' : 'bg-gray-900/40 border-white/5 text-gray-300'}`}>
                                         <div class={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                                             cita.estado === 'completada' ? 'bg-emerald-400' : 
                                             cita.estado === 'cancelada' ? 'bg-red-400' : 'bg-amber-400'
@@ -287,8 +353,7 @@ citasRaw?.forEach((cita) => {
                                     <div class="text-[10px] text-center text-gray-500 font-medium group-hover:text-gray-300">+ {citasDia.length - 2} más</div>
                                 )}
                             </div>
-                            
-                            {isToday && <div class="absolute bottom-0 inset-x-0 h-1 bg-blue-500"></div>}
+                            {isToday && !isInhabil && <div class="absolute bottom-0 inset-x-0 h-1 bg-blue-500"></div>}
                         </div>
                     );
                 })}
@@ -306,12 +371,65 @@ citasRaw?.forEach((cita) => {
         ))}
     </div>
 
+    <dialog id="modal-periodo" class="m-auto bg-gray-900 border border-gray-700 rounded-3xl shadow-2xl backdrop:backdrop-blur-xl w-full max-w-md text-left p-0 overflow-hidden outline-none">
+        <div class="relative bg-gray-800/30 p-6 border-b border-gray-700/50 flex justify-between items-center">
+            <h3 class="text-xl font-extrabold text-white">Gestionar días inhabiles</h3>
+            <button onclick="document.getElementById('modal-periodo').close()" type="button" class="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors">✕</button>
+        </div>
+        
+        <form method="POST" class="p-6 space-y-6">
+            <input type="hidden" name="accion" value="procesar_periodo" />
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Acción a realizar</label>
+                    
+                    <div class="relative group">
+                        <select name="tipo_operacion" class="appearance-none w-full bg-gray-950 border border-gray-700 rounded-xl pl-4 pr-10 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
+                            <option value="bloquear">Marcar como Inhábil</option>
+                            <option value="habilitar">Marcar como Hábil</option>
+                        </select>
+                        
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 group-hover:text-blue-400 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Inicio</label>
+                        <input type="date" name="fecha_inicio" required class="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Fin</label>
+                        <input type="date" name="fecha_fin" required class="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-4 border-t border-gray-800/50">
+                <button type="button" onclick="document.getElementById('modal-periodo').close()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                    Cancelar
+                </button>
+                <button type="submit" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20 transition-all hover:scale-105 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                    Aplicar Cambios
+                </button>
+            </div>
+        </form>
+    </dialog>
+
     <dialog id="modal-dia" class="m-auto bg-gray-900 border border-gray-700 rounded-3xl shadow-2xl backdrop:backdrop-blur-xl w-full max-w-lg text-left p-0 overflow-hidden outline-none">
         <div class="relative bg-gray-800/30 p-6 border-b border-gray-700/50">
             <div class="relative z-10 flex justify-between items-start">
                 <div>
                     <p class="text-xs text-blue-400 font-bold uppercase tracking-wider mb-1" id="modal-mes-anio"></p>
-                    <h3 class="text-3xl font-extrabold text-white">Día <span id="modal-dia-num" class="text-blue-400"></span></h3>
+                    <div class="flex items-center gap-3">
+                        <h3 class="text-3xl font-extrabold text-white">Día <span id="modal-dia-num" class="text-blue-400"></span></h3>
+                        <span id="badge-inhabil" class="hidden bg-red-900/50 text-red-400 border border-red-500/30 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">Inhábil</span>
+                    </div>
                 </div>
                 <button onclick="document.getElementById('modal-dia').close()" class="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors">✕</button>
             </div>
@@ -319,7 +437,13 @@ citasRaw?.forEach((cita) => {
 
         <div class="p-6 max-h-[50vh] overflow-y-auto" id="modal-lista-citas"></div>
 
-        <div class="p-4 bg-gray-950/30 border-t border-gray-800/50 flex justify-center">
+        <div class="p-4 bg-gray-950/30 border-t border-gray-800/50 flex justify-center gap-x-3">
+            <form method="POST" class="m-0">
+                <input type="hidden" name="accion" value="toggle_inhabil" />
+                <input type="hidden" name="fecha" id="modal-fecha-inhabil" value="" />
+                <input type="hidden" name="es_inhabil" id="modal-es-inhabil" value="" />
+                <button type="submit" id="btn-toggle-inhabil" class="text-xs font-bold transition-colors uppercase tracking-widest py-2 flex items-center gap-2"></button>
+            </form>
             <a id="btn-agendar-modal" href="/nueva-cita" class="text-xs font-bold text-gray-400 hover:text-blue-400 flex items-center gap-2 transition-colors uppercase tracking-widest py-2">
                 <span class="text-lg leading-none">+</span> Agendar cita
             </a>
@@ -345,10 +469,11 @@ citasRaw?.forEach((cita) => {
     }
 </style>
 
-<script define:vars={{ displayMonth, currentYear, currentMonth }}>
+<script define:vars={{ displayMonth, currentYear, currentMonth, diasInhabilesArray: Array.from(diasInhabilesSet) }}>
     window.mesNombre = displayMonth;
     window.anio = currentYear;
     window.mesNumero = currentMonth;
+    window.diasInhabiles = new Set(diasInhabilesArray);
 
     window.openDayModal = (day) => {
         const modal = document.getElementById('modal-dia');
@@ -357,13 +482,43 @@ citasRaw?.forEach((cita) => {
         
         document.getElementById('modal-dia-num').textContent = day;
         document.getElementById('modal-mes-anio').textContent = `${window.mesNombre} ${window.anio}`;
+        
+        const m = String(window.mesNumero + 1).padStart(2, '0');
+        const d = String(day).padStart(2, '0');
+        const fechaISO = `${window.anio}-${m}-${d}`;
+        const isInhabil = window.diasInhabiles.has(fechaISO);
 
         if (btnAgendar) {
-            const m = String(window.mesNumero + 1).padStart(2, '0');
-            const d = String(day).padStart(2, '0');
-            const fechaISO = `${window.anio}-${m}-${d}`;
-            
-            btnAgendar.href = `/nueva-cita?fecha=${fechaISO}`;
+            if (isInhabil) {
+                btnAgendar.classList.add('hidden');
+                btnAgendar.classList.remove('flex');
+            } else {
+                btnAgendar.classList.remove('hidden');
+                btnAgendar.classList.add('flex');
+                btnAgendar.href = `/nueva-cita?fecha=${fechaISO}`;
+            }
+        }
+        
+        document.getElementById('modal-fecha-inhabil').value = fechaISO;
+        document.getElementById('modal-es-inhabil').value = isInhabil;
+        
+        const badgeInhabil = document.getElementById('badge-inhabil');
+        const btnToggle = document.getElementById('btn-toggle-inhabil');
+        
+        if (isInhabil) {
+            badgeInhabil.classList.remove('hidden');
+            btnToggle.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                Habilitar Día
+            `;
+            btnToggle.className = 'text-xs font-bold text-emerald-500 hover:text-emerald-400 transition-colors uppercase tracking-widest py-2 flex items-center gap-1.5';
+        } else {
+            badgeInhabil.classList.add('hidden');
+            btnToggle.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                Marcar como Inhábil
+            `;
+            btnToggle.className = 'text-xs font-bold text-gray-400 hover:text-red-400 transition-colors uppercase tracking-widest py-2 flex items-center gap-1.5 cursor-pointer';
         }
 
         const tarjetasGuardadas = document.querySelector(`#citas-store div[data-day="${day}"]`);
@@ -375,8 +530,8 @@ citasRaw?.forEach((cita) => {
         } else {
             listaContainer.innerHTML = `
                 <div class="flex flex-col items-center justify-center py-12 text-gray-500 border-2 border-dashed border-gray-800 rounded-2xl">
-                    <p class="font-medium">Sin citas programadas</p>
-                    <p class="text-xs mt-1 opacity-60">Tiempo libre disponible</p>
+                    <p class="font-medium">${isInhabil ? 'Día bloqueado' : 'Sin citas programadas'}</p>
+                    <p class="text-xs mt-1 opacity-60">${isInhabil ? 'No se deberían agendar citas' : 'Tiempo libre disponible'}</p>
                 </div>
             `;
         }

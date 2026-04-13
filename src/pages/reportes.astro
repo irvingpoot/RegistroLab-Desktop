@@ -4,6 +4,14 @@ import ReturnButton from '../components/ReturnButton.astro';
 
 const reportesDisponibles = [
     {
+        titulo: "Reporte de Poligrafía",
+        descripcion: "Genera el reporte clínico en PDF a partir de los datos de poligrafía nocturna del paciente, con resultados, cuestionarios y recomendaciones.",
+        icono: "moon",
+        color: "indigo",
+        tag: "Clínico",
+        id: "reporte-poligrafia"
+    },
+    {
         titulo: "Cama vs Hamaca",
         descripcion: "Exportación en CSV para investigación. Cruce de variables: Lugar de sueño vs Escalas (Epworth, PSQI, Berlin).",
         icono: "chart",
@@ -77,74 +85,336 @@ const getColors = (color: string) => {
                     })}
                 </div>
             </div>
-
-            <div class="space-y-6">
-                
-                <div class="bg-slate-900/50 border border-white/10 rounded-2xl p-6 backdrop-blur-sm sticky top-6">
-                    <div class="flex items-center gap-2 mb-6 pb-4 border-b border-white/5">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                        <h2 class="text-sm font-bold text-gray-300 uppercase tracking-wide">Opciones de Exportación</h2>
-                    </div>
-
-                    <form class="space-y-5">
-                        <div>
-                            <label class="block text-xs font-medium text-gray-500 mb-2 uppercase">Periodo de Datos</label>
-                            <div class="relative">
-                                <select class="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:border-blue-500 outline-none appearance-none cursor-pointer">
-                                    <option>Última Sesión / Consulta</option>
-                                    <option selected>Últimos 30 días</option>
-                                    <option>Historial Completo</option>
-                                </select>
-                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
-                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-                                </div>
-                            </div>
-                        </div>
-                    </form>
-
-                    <div class="mt-6 pt-4 border-t border-white/5">
-                        <div class="p-3 rounded-lg bg-blue-900/10 border border-blue-500/10 flex gap-3">
-                            <div class="text-blue-400 mt-0.5">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            </div>
-                            <p class="text-xs text-blue-200/70 leading-relaxed">
-                                Estos ajustes se aplicarán al siguiente reporte que genere.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 </Layout>
 
+<dialog id="modal-poligrafia" class="fixed inset-0 z-50 bg-transparent p-0 m-0 max-w-none w-full h-full">
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
+            
+            <div class="flex items-center justify-between p-6 border-b border-white/10">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">Reporte de Poligrafía</h3>
+                        <p id="modal-subtitulo" class="text-xs text-gray-400">Paso 1 de 2 — Seleccionar paciente</p>
+                    </div>
+                </div>
+                <button id="btn-cerrar-modal" class="text-gray-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5 cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div id="paso-1" class="p-6 space-y-4">
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    <input
+                        id="buscador-paciente"
+                        type="text"
+                        placeholder="Buscar paciente por nombre..."
+                        class="w-full bg-slate-800 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none transition-colors"
+                        autocomplete="off"
+                    />
+                </div>
+
+                <div id="resultados-busqueda" class="space-y-1 max-h-64 overflow-y-auto hidden"></div>
+
+                <div id="estado-vacio-busqueda" class="text-center py-8 text-gray-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <p class="text-sm">Escribe para buscar un paciente</p>
+                </div>
+
+                <div id="sin-resultados" class="text-center py-8 text-gray-500 hidden">
+                    <p class="text-sm">No se encontraron pacientes con ese nombre</p>
+                </div>
+            </div>
+
+            <div id="paso-2" class="p-6 space-y-5 hidden">
+
+                <div class="flex items-center gap-3 p-3 rounded-xl bg-indigo-500/5 border border-indigo-500/20">
+                    <div class="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 font-bold text-sm" id="paciente-inicial">?</div>
+                    <div>
+                        <p class="text-sm font-semibold text-white" id="paciente-nombre-seleccionado">—</p>
+                        <p class="text-xs text-gray-400" id="paciente-edad-seleccionada">—</p>
+                    </div>
+                    <button id="btn-cambiar-paciente" class="ml-auto text-xs text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer">Cambiar</button>
+                </div>
+
+                <div>
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Recomendaciones a incluir</p>
+                    <div class="space-y-2">
+
+                        <label class="flex items-start gap-3 p-3 rounded-xl border border-white/5 bg-slate-800/50 hover:bg-slate-800 cursor-pointer transition-colors group">
+                            <input type="checkbox" value="cpap" checked class="rec-checkbox mt-0.5 h-4 w-4 rounded border-gray-600 bg-slate-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900 cursor-pointer" />
+                            <div>
+                                <p class="text-sm font-medium text-white group-hover:text-indigo-300 transition-colors">Valoración de CPAP</p>
+                                <p class="text-xs text-gray-500 mt-0.5">Ventilación mecánica no invasiva mediante presión positiva continua.</p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start gap-3 p-3 rounded-xl border border-white/5 bg-slate-800/50 hover:bg-slate-800 cursor-pointer transition-colors group">
+                            <input type="checkbox" value="orl" checked class="rec-checkbox mt-0.5 h-4 w-4 rounded border-gray-600 bg-slate-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900 cursor-pointer" />
+                            <div>
+                                <p class="text-sm font-medium text-white group-hover:text-indigo-300 transition-colors">Revisión de Otorrinolaringología</p>
+                                <p class="text-xs text-gray-500 mt-0.5">Valoración de oclusiones en vía aérea superior y peso corporal saludable.</p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start gap-3 p-3 rounded-xl border border-white/5 bg-slate-800/50 hover:bg-slate-800 cursor-pointer transition-colors group">
+                            <input type="checkbox" value="posicion" checked class="rec-checkbox mt-0.5 h-4 w-4 rounded border-gray-600 bg-slate-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900 cursor-pointer" />
+                            <div>
+                                <p class="text-sm font-medium text-white group-hover:text-indigo-300 transition-colors">Posición lateral al dormir</p>
+                                <p class="text-xs text-gray-500 mt-0.5">Evitar posición supina para reducir eventos obstructivos.</p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start gap-3 p-3 rounded-xl border border-white/5 bg-slate-800/50 hover:bg-slate-800 cursor-pointer transition-colors group">
+                            <input type="checkbox" value="autoinforme" checked class="rec-checkbox mt-0.5 h-4 w-4 rounded border-gray-600 bg-slate-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900 cursor-pointer" />
+                            <div>
+                                <p class="text-sm font-medium text-white group-hover:text-indigo-300 transition-colors">Higiene de sueño y ciclo circadiano</p>
+                                <p class="text-xs text-gray-500 mt-0.5">Psicoeducación y estrategias para mejorar la calidad del sueño.</p>
+                            </div>
+                        </label>
+
+                    </div>
+                </div>
+
+                <div id="error-generacion" class="hidden p-3 rounded-lg bg-red-900/20 border border-red-500/20 text-red-300 text-sm"></div>
+
+                <button
+                    id="btn-generar-pdf"
+                    class="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm cursor-pointer transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span id="btn-generar-texto">Generar PDF</span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+    <div id="modal-backdrop" class="fixed inset-0 bg-black/60 backdrop-blur-sm -z-10"></div>
+</dialog>
+
 <script>
+    let pacienteSeleccionado: { id: number; nombre: string; edad: number } | null = null;
+    let busquedaTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const modal            = document.getElementById('modal-poligrafia') as HTMLDialogElement;
+    const paso1            = document.getElementById('paso-1')!;
+    const paso2            = document.getElementById('paso-2')!;
+    const subtitulo        = document.getElementById('modal-subtitulo')!;
+    const buscador         = document.getElementById('buscador-paciente') as HTMLInputElement;
+    const resultadosEl     = document.getElementById('resultados-busqueda')!;
+    const estadoVacio      = document.getElementById('estado-vacio-busqueda')!;
+    const sinResultados    = document.getElementById('sin-resultados')!;
+    const btnCerrar        = document.getElementById('btn-cerrar-modal')!;
+    const btnCambiar       = document.getElementById('btn-cambiar-paciente')!;
+    const btnGenerarPDF    = document.getElementById('btn-generar-pdf') as HTMLButtonElement;
+    const btnGenerarTexto  = document.getElementById('btn-generar-texto')!;
+    const errorEl          = document.getElementById('error-generacion')!;
+    const backdrop         = document.getElementById('modal-backdrop')!;
+
+    const abrirModal = () => {
+        irPaso1();
+        modal.showModal();
+        setTimeout(() => buscador.focus(), 100);
+    };
+
+    const cerrarModal = () => {
+        modal.close();
+        buscador.value = '';
+        pacienteSeleccionado = null;
+        mostrarEstadoVacio();
+    };
+
+    btnCerrar.addEventListener('click', cerrarModal);
+    backdrop.addEventListener('click', cerrarModal);
+    modal.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarModal(); });
+
+    const irPaso1 = () => {
+        paso1.classList.remove('hidden');
+        paso2.classList.add('hidden');
+        subtitulo.textContent = 'Paso 1 de 2 — Seleccionar paciente';
+    };
+
+    const irPaso2 = (paciente: { id: number; nombre: string; edad: number }) => {
+        pacienteSeleccionado = paciente;
+        document.getElementById('paciente-nombre-seleccionado')!.textContent = paciente.nombre;
+        document.getElementById('paciente-edad-seleccionada')!.textContent = `${paciente.edad} años`;
+        document.getElementById('paciente-inicial')!.textContent = paciente.nombre.charAt(0).toUpperCase();
+        errorEl.classList.add('hidden');
+        paso1.classList.add('hidden');
+        paso2.classList.remove('hidden');
+        subtitulo.textContent = 'Paso 2 de 2 — Recomendaciones';
+    };
+
+    btnCambiar.addEventListener('click', () => {
+        pacienteSeleccionado = null;
+        buscador.value = '';
+        mostrarEstadoVacio();
+        irPaso1();
+        setTimeout(() => buscador.focus(), 100);
+    });
+
+    const mostrarEstadoVacio = () => {
+        resultadosEl.classList.add('hidden');
+        estadoVacio.classList.remove('hidden');
+        sinResultados.classList.add('hidden');
+    };
+
+    const mostrarSinResultados = () => {
+        resultadosEl.classList.add('hidden');
+        estadoVacio.classList.add('hidden');
+        sinResultados.classList.remove('hidden');
+    };
+
+    const mostrarResultados = (pacientes: any[]) => {
+        estadoVacio.classList.add('hidden');
+        sinResultados.classList.add('hidden');
+
+        resultadosEl.innerHTML = pacientes.map(p => `
+            <button
+                data-id="${p.id}"
+                data-nombre="${p.nombre}"
+                data-edad="${p.edad}"
+                class="resultado-paciente w-full flex items-center cursor-pointer gap-3 p-3 rounded-xl text-left hover:bg-slate-700/60 transition-colors border border-transparent hover:border-white/10"
+            >
+                <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-gray-300 font-bold text-sm shrink-0">
+                    ${p.nombre.charAt(0).toUpperCase()}
+                </div>
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-white truncate">${p.nombre}</p>
+                    <p class="text-xs text-gray-400">${p.edad} años</p>
+                </div>
+            </button>
+        `).join('');
+
+        resultadosEl.classList.remove('hidden');
+
+        resultadosEl.querySelectorAll('.resultado-paciente').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id    = parseInt(btn.getAttribute('data-id')!);
+                const nombre = btn.getAttribute('data-nombre')!;
+                const edad   = parseInt(btn.getAttribute('data-edad')!);
+                irPaso2({ id, nombre, edad });
+            });
+        });
+    };
+
+    buscador.addEventListener('input', () => {
+        const query = buscador.value.trim();
+
+        if (busquedaTimeout) clearTimeout(busquedaTimeout);
+
+        if (query.length < 2) {
+            mostrarEstadoVacio();
+            return;
+        }
+
+        busquedaTimeout = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/buscar-pacientes?q=${encodeURIComponent(query)}`);
+                if (!res.ok) throw new Error();
+                const data = await res.json();
+                if (data.length === 0) mostrarSinResultados();
+                else mostrarResultados(data);
+            } catch {
+                mostrarSinResultados();
+            }
+        }, 300);
+    });
+
+    btnGenerarPDF.addEventListener('click', async () => {
+        if (!pacienteSeleccionado) return;
+
+        const recomendaciones = Array.from(
+            document.querySelectorAll<HTMLInputElement>('.rec-checkbox:checked')
+        ).map(cb => cb.value);
+
+        btnGenerarPDF.disabled = true;
+        btnGenerarTexto.textContent = 'Generando PDF...';
+        errorEl.classList.add('hidden');
+
+        try {
+            const response = await fetch('/api/generar-reporte-poligrafia', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    paciente_id: pacienteSeleccionado.id,
+                    recomendaciones,
+                }),
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error || 'Error al generar el reporte');
+            }
+
+            const blob = await response.blob();
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url;
+            a.download = `reporte_poligrafia_${pacienteSeleccionado.nombre.replace(/\s+/g, '_')}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(url);
+            a.remove();
+
+            cerrarModal();
+        } catch (err: any) {
+            errorEl.textContent = err.message || 'Ocurrió un error inesperado.';
+            errorEl.classList.remove('hidden');
+        } finally {
+            btnGenerarPDF.disabled = false;
+            btnGenerarTexto.textContent = 'Generar PDF';
+        }
+    });
+
     document.addEventListener('DOMContentLoaded', () => {
         const botones = document.querySelectorAll('.btn-generar');
 
         botones.forEach(btn => {
             btn.addEventListener('click', async (e) => {
-                const titulo = btn.getAttribute('data-titulo');
                 const reporteId = btn.getAttribute('data-id');
+
+                if (reporteId === 'reporte-poligrafia') {
+                    abrirModal();
+                    return;
+                }
+
+                const titulo = btn.getAttribute('data-titulo');
                 const originalHtml = btn.innerHTML;
-                
-                btn.classList.add('opacity-75', 'cursor-not-allowed');
-                btn.setAttribute('disabled', 'true');
+
+                (btn as HTMLButtonElement).classList.add('opacity-75', 'cursor-not-allowed');
+                (btn as HTMLButtonElement).setAttribute('disabled', 'true');
                 btn.innerHTML = `
                     <div class="flex items-center justify-center gap-2 h-full">
                         <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                         <span>Generando...</span>
                     </div>
                 `;
-                
+
                 try {
                     if (reporteId === 'csv-habitos') {
                         const response = await fetch('/api/exportar-habitos');
-                        
                         if (response.ok) {
                             const blob = await response.blob();
                             const url = window.URL.createObjectURL(blob);
-                            
                             const a = document.createElement('a');
                             a.href = url;
                             a.download = `reporte_habitos_${new Date().toISOString().split('T')[0]}.csv`;
@@ -164,8 +434,8 @@ const getColors = (color: string) => {
                     alert("Hubo un error al generar el reporte.");
                 } finally {
                     btn.innerHTML = originalHtml;
-                    btn.classList.remove('opacity-75', 'cursor-not-allowed');
-                    btn.removeAttribute('disabled');
+                    (btn as HTMLButtonElement).classList.remove('opacity-75', 'cursor-not-allowed');
+                    (btn as HTMLButtonElement).removeAttribute('disabled');
                 }
             });
         });

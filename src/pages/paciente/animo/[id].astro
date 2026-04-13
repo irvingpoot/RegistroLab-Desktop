@@ -135,7 +135,7 @@ if (Astro.request.method === "POST") {
             };
             
             // Lista filtrada para Ánimo
-            const scoresList = ['hamilton_d', 'hamilton_a', 'isi', 'beck', 'banfe', 'eva'];
+            const scoresList = ['hamilton_d', 'hamilton_a', 'isi', 'beck', 'banfe', 'bai'];
             
             let puntajesActualizados: any = {};
             scoresList.forEach(score => {
@@ -251,7 +251,7 @@ const { data: paciente, error } = await supabase
         isi_pre, isi_inter, isi_post,
         beck_pre, beck_inter, beck_post,
         banfe_pre, banfe_inter, banfe_post,
-        eva_pre, eva_inter, eva_post,
+        bai_pre, bai_inter, bai_post,
         pacientes_sintomas(*),
         pacientes_puntajes_extra(*),
         pacientes_seguimiento(*),
@@ -675,7 +675,7 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-800">
-                                {['hamilton_d', 'hamilton_a', 'isi', 'beck', 'banfe', 'eva'].map(score => (
+                                {['hamilton_d', 'hamilton_a', 'isi', 'beck', 'banfe', 'bai'].map(score => (
                                     <tr>
                                         <td class="py-3 pr-4 font-medium text-gray-300 capitalize">
                                             {score
@@ -684,7 +684,7 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                                                 .replace('isi', 'Índice Severidad Insomnio (ISI)')
                                                 .replace('beck', 'Inventario de Depresión de Beck')
                                                 .replace('banfe', 'BANFE')
-                                                .replace('eva', 'Escala de Dolor (EVA)')}
+                                                .replace('bai', 'Inventario de ansiedad de Beck (BAI)')}
                                         </td>
                                         <td class="py-3 text-center font-mono text-blue-200">{paciente[`${score}_pre` as keyof typeof paciente] ?? "-"}</td>
                                         <td class="py-3 text-center font-mono text-blue-200">{paciente[`${score}_inter` as keyof typeof paciente] ?? "-"}</td>
@@ -848,7 +848,7 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                 <table class="w-full text-left border-collapse">
                     <thead class="sticky top-0 bg-gray-900 z-10"><tr class="text-gray-400 text-xs uppercase border-b border-gray-700"><th class="py-2">Prueba</th><th class="py-2 text-center w-24 text-blue-400">Pre</th><th class="py-2 text-center w-24 text-purple-400">Inter</th><th class="py-2 text-center w-24 text-emerald-400">Post</th></tr></thead>
                     <tbody class="divide-y divide-gray-800">
-                        {['hamilton_d', 'hamilton_a', 'isi', 'beck', 'banfe', 'eva'].map(score => (
+                        {['hamilton_d', 'hamilton_a', 'isi', 'beck', 'banfe', 'bai'].map(score => (
                             <tr>
                                 <td class="py-3 pr-4 font-medium text-gray-300 capitalize">
                                     {score
@@ -857,7 +857,7 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                                         .replace('isi', 'Índice Severidad Insomnio (ISI)')
                                         .replace('beck', 'Inventario de Depresión de Beck')
                                         .replace('banfe', 'BANFE')
-                                        .replace('eva', 'Escala de Dolor (EVA)')}
+                                        .replace('bai', 'Inventario de ansiedad de Beck (BAI)')}
                                 </td>
                                 <td class="p-2">
                                     <input type="number" name={`${score}_pre` as keyof typeof paciente} value={paciente[`${score}_pre` as keyof typeof paciente]} class="score-input w-full" placeholder="-" />
