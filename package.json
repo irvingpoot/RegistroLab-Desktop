@@ -1,9 +1,9 @@
 {
-  "name": "registrolab",
+  "name": "labsomno",
   "author": "Irving Poot",
   "description": "Sistema de Gestión Lab-Somno",
   "type": "module",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "main": "electron-main.cjs",
   "scripts": {
     "dev": "astro dev",
