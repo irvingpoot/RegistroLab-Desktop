@@ -2179,7 +2179,7 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
                 // Buscamos en el JSON las claves que guardamos desde calculos.ts
                 if (datos["Resultado Categoría 1 (Ronquido)"]?.includes("POSITIVA")) cats.push("1");
                 if (datos["Resultado Categoría 2 (Somnolencia)"]?.includes("POSITIVA")) cats.push("2");
-                if (datos["Resultado Categoría 3 (Presión Arterial)"]?.includes("POSITIVA")) cats.push("3");
+                if (datos["Resultado Categoría 3 (Presión Arterial)"]?.includes("POSITIVA") || datos["Resultado Categoría 3 (Hipertensión)"]) cats.push("3");
 
                 const textoCats = cats.length > 0 ? cats.join(", ") : "Ninguna";
                 const colorTexto = cats.length > 0 ? "text-red-400" : "text-gray-400";
@@ -2205,7 +2205,8 @@ const ultimaConfig = sesionesTMS.length > 0 ? sesionesTMS[0] : {};
             "puntaje", 
             "Categoría 1 (Ronquido)", 
             "Categoría 2 (Somnolencia)", 
-            "Categoría 3 (Hipertensión/IMC)",
+            "Categoría 3 (Hipertensión)",
+            "Categoría 3 (Presión Arterial)",
             "Riesgo Global"
         ];
 

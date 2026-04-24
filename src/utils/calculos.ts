@@ -71,7 +71,7 @@ export const calcularBerlin = (datos: Record<string, any>): { puntaje: number, e
             "IMC": imc.toFixed(1),
             "Resultado Categoría 1 (Ronquido)": esCat1 ? "POSITIVA (Alto Riesgo)" : "Negativa",
             "Resultado Categoría 2 (Somnolencia)": esCat2 ? "POSITIVA (Alto Riesgo)" : "Negativa",
-            "Resultado Categoría 3 (Presión Arterial)": esCat3 ? "POSITIVA (Alto Riesgo)" : "Negativa",
+            "Resultado Categoría 3 (Hipertensión)": esCat3 ? "POSITIVA (Alto Riesgo)" : "Negativa",
             "Riesgo Global": totalScore >= 2 ? "ALTO RIESGO (2 o más categorías)" : "Bajo Riesgo"
         }
     };
